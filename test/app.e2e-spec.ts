@@ -7,7 +7,7 @@ import { AppModule } from './../src/app.module';
 import { setupApp } from './../src/app.setup';
 import { SupabaseService } from './../src/integrations/supabase/supabase.service';
 
-describe('AppModule (integration)', () => {
+describe('AppModule (e2e)', () => {
   let app: INestApplication<App>;
   const getUser = jest.fn();
   const refreshSession = jest.fn();
