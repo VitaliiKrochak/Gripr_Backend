@@ -2,6 +2,10 @@
 
 - Create one directory per feature under `src/modules`, for example
   `src/modules/catalog` or `src/modules/orders`.
+- Name project-owned files with lowercase, dot-separated segments, for example
+  `health.status.dto.ts`, `account.auth.service.ts`, and `app.e2e.spec.ts`. Do
+  not use hyphens or underscores as word separators. Preserve ecosystem-defined
+  filenames such as `package-lock.json` and `nest-cli.json`.
 - Keep a feature flat while it is small. Introduce a descriptive subdirectory,
   such as `dto` or `entities`, only when it groups several real files.
 - Put controllers in `public`, `private`, or `admin` inside their owning feature.
@@ -21,6 +25,10 @@
   business logic into a service in the same feature.
 - Register controllers and services in the owning Nest module. Export a provider
   only when another feature actually needs it.
+- Cover every feature module that contains business or decision-making logic
+  with unit tests for that logic. A health module that only returns a static
+  liveness status is exempt; add unit tests as soon as it checks dependencies,
+  branches on application state, or gains any other non-trivial behavior.
 - Put only reusable decorators, guards, types, and similarly small building
   blocks in `src/shared`. Do not create a Nest module in `shared`.
 - Keep auth cookie names and options centralized in `src/shared/cookies`.

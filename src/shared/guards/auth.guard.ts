@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { SupabaseService } from '../../integrations/supabase/supabase.service';
-import { ACCESS_TOKEN_COOKIE } from '../cookies/auth-cookie';
+import { ACCESS_TOKEN_COOKIE } from '../cookies/auth.cookie';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 type RequestWithUser = Request &

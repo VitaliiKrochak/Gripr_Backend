@@ -24,12 +24,12 @@ import {
   clearAuthCookies,
   REFRESH_TOKEN_COOKIE,
   setAuthCookies,
-} from '../../../shared/cookies/auth-cookie';
+} from '../../../shared/cookies/auth.cookie';
 import { Public } from '../../../shared/decorators/public.decorator';
-import { AuthResult } from '../account-auth.service';
-import { AccountAuthService } from '../account-auth.service';
-import { AuthCredentialsDto } from '../dto/auth-credentials.dto';
-import { AuthSessionDto } from '../dto/auth-session.dto';
+import { AuthResult } from '../account.auth.service';
+import { AccountAuthService } from '../account.auth.service';
+import { AuthCredentialsDto } from '../dto/auth.credentials.dto';
+import { AuthSessionDto } from '../dto/auth.session.dto';
 
 @Public()
 @ApiTags('Auth')

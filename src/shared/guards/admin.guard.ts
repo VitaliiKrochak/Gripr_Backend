@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { AuthenticatedRequest } from '../types/authenticated-request';
+import { AuthenticatedRequest } from '../types/authenticated.request';
 
 @Injectable()
 export class AdminGuard implements CanActivate {

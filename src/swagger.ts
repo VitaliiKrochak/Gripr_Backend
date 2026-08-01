@@ -5,7 +5,7 @@ import type { NextFunction, Request, Response } from 'express';
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
-} from './shared/cookies/auth-cookie';
+} from './shared/cookies/auth.cookie';
 
 function swaggerAuth() {
   const username = process.env.SWAGGER_USERNAME;
