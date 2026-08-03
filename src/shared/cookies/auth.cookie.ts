@@ -13,10 +13,19 @@ interface AuthCookieTokens {
 }
 
 function baseCookieOptions(): CookieOptions {
+  const domain = process.env.AUTH_COOKIE_DOMAIN?.trim();
+
+  if (domain && (domain.includes('://') || /[:/\s]/.test(domain))) {
+    throw new Error(
+      'AUTH_COOKIE_DOMAIN must be a domain without protocol, port, or path',
+    );
+  }
+
   return {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
+    ...(domain ? { domain } : {}),
   };
 }
 

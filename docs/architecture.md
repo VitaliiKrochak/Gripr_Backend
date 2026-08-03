@@ -2,6 +2,9 @@
 
 The project uses a small feature-first structure. A feature keeps its module,
 controllers, services, and DTOs together without empty architectural layers.
+The Next.js frontend lives in the sibling `../jewelry` repository and calls
+this backend directly; there is no Next.js API proxy between the browser and
+NestJS.
 
 ```text
 src/
@@ -79,7 +82,10 @@ The frontend calls this API instead of Supabase directly. Access and refresh
 tokens are stored only in `HttpOnly` cookies and are never returned in JSON.
 The access cookie is available to the whole API; the refresh cookie is limited
 to `/api/auth/refresh`. Cookies use `SameSite=Lax` and become `Secure` in
-production.
+production. `AUTH_COOKIE_DOMAIN` optionally scopes both cookies to a shared
+parent domain. Its value is a bare domain without protocol, port, or path. An
+unset or empty value omits the `Domain` attribute and keeps cookies host-only,
+which is the local-development behavior.
 
 The Next.js client must include credentials in browser requests:
 
@@ -91,9 +97,21 @@ fetch(`${apiUrl}/api/auth/sign-out`, {
 ```
 
 `FRONTEND_URL` configures the allowed CORS origin and may contain a
-comma-separated list. Prefer serving the frontend and API from the same site.
-For Next.js server-side requests, forward the incoming cookie header explicitly
-because server-side `fetch` has no browser cookie jar.
+comma-separated list. Credentialed CORS is enabled and wildcard origins are
+rejected. Prefer serving the frontend and API from the same site. For Next.js
+server-side requests, `../jewelry` uses `createServerApiClient()` to forward the
+incoming cookie header explicitly because server-side HTTP clients have no
+browser cookie jar. The access cookie's `/` path makes it available on the
+incoming frontend request; the refresh cookie remains restricted to
+`/api/auth/refresh`.
+
+A production deployment with the frontend at `https://example.com` and the API
+at `https://api.example.com` uses:
+
+```dotenv
+FRONTEND_URL=https://example.com
+AUTH_COOKIE_DOMAIN=example.com
+```
 
 ## Swagger
 

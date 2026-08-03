@@ -23,6 +23,8 @@ describe('AppModule (e2e)', () => {
     process.env.SUPABASE_SECRET_KEY = 'test-secret-key';
     process.env.SWAGGER_USERNAME = 'swagger-user';
     process.env.SWAGGER_PASSWORD = 'swagger-password';
+    process.env.FRONTEND_URL = 'https://example.com, https://admin.example.com';
+    delete process.env.AUTH_COOKIE_DOMAIN;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -110,6 +112,35 @@ describe('AppModule (e2e)', () => {
     expect(response.body).not.toHaveProperty('refreshToken');
   });
 
+  it('sets auth cookies for the configured parent domain', async () => {
+    process.env.AUTH_COOKIE_DOMAIN = 'example.com';
+
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/sign-in')
+      .send({ email: 'user@example.com', password: 'password' })
+      .expect(200);
+    const cookies = response.headers['set-cookie'] as unknown as string[];
+    const accessCookie = cookies.find((cookie) =>
+      cookie.startsWith('access_token='),
+    );
+    const refreshCookie = cookies.find((cookie) =>
+      cookie.startsWith('refresh_token='),
+    );
+
+    expect(accessCookie).toEqual(expect.stringContaining('Path=/;'));
+    expect(accessCookie).toEqual(
+      expect.stringContaining('Domain=example.com;'),
+    );
+    expect(accessCookie).toEqual(expect.stringContaining('HttpOnly'));
+    expect(refreshCookie).toEqual(
+      expect.stringContaining('Path=/api/auth/refresh;'),
+    );
+    expect(refreshCookie).toEqual(
+      expect.stringContaining('Domain=example.com;'),
+    );
+    expect(refreshCookie).toEqual(expect.stringContaining('HttpOnly'));
+  });
+
   it('clears stale auth cookies when sign-up does not create a session', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-up')
@@ -143,22 +174,50 @@ describe('AppModule (e2e)', () => {
         expect.stringContaining('refresh_token=rotated-refresh-token'),
       ]),
     );
+    expect(response.body).not.toHaveProperty('accessToken');
+    expect(response.body).not.toHaveProperty('refreshToken');
   });
 
   it('clears both auth cookies on sign-out', async () => {
+    process.env.AUTH_COOKIE_DOMAIN = 'example.com';
+
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-out')
       .set('Cookie', 'access_token=user-token')
       .expect(204);
+    const cookies = response.headers['set-cookie'] as unknown as string[];
+    const accessCookie = cookies.find((cookie) =>
+      cookie.startsWith('access_token='),
+    );
+    const refreshCookie = cookies.find((cookie) =>
+      cookie.startsWith('refresh_token='),
+    );
 
     expect(signOut).toHaveBeenCalledWith('user-token');
-    expect(response.headers['set-cookie']).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('access_token=;'),
-        expect.stringContaining('refresh_token=;'),
-      ]),
+    expect(accessCookie).toEqual(expect.stringContaining('Path=/;'));
+    expect(accessCookie).toEqual(
+      expect.stringContaining('Domain=example.com;'),
+    );
+    expect(refreshCookie).toEqual(
+      expect.stringContaining('Path=/api/auth/refresh;'),
+    );
+    expect(refreshCookie).toEqual(
+      expect.stringContaining('Domain=example.com;'),
     );
   });
+
+  it.each(['https://example.com', 'https://admin.example.com'])(
+    'allows credentialed CORS requests from %s',
+    async (origin) => {
+      await request(app.getHttpServer())
+        .options('/api/health')
+        .set('Origin', origin)
+        .set('Access-Control-Request-Method', 'GET')
+        .expect('Access-Control-Allow-Origin', origin)
+        .expect('Access-Control-Allow-Credentials', 'true')
+        .expect(204);
+    },
+  );
 
   it('publishes Swagger paths and cookie security schemes', async () => {
     const response = await request(app.getHttpServer())

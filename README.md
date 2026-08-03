@@ -23,13 +23,29 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+NestJS API for the jewelry application. The Next.js frontend is maintained in
+the sibling `../jewelry` repository and calls this API directly from the browser
+and from Server Components.
 
 ## Project setup
 
 ```bash
 $ npm install
 ```
+
+Copy `.env.example` to `.env` and configure Supabase before starting locally.
+Local development leaves `AUTH_COOKIE_DOMAIN` empty so auth cookies remain
+host-only. For a production frontend at `https://example.com` with this API at
+`https://api.example.com`, use:
+
+```dotenv
+FRONTEND_URL=https://example.com
+AUTH_COOKIE_DOMAIN=example.com
+```
+
+`AUTH_COOKIE_DOMAIN` must contain only the shared parent domain: no protocol,
+port, or path. Authentication tokens remain in `HttpOnly` cookies and are never
+returned in JSON.
 
 ## Compile and run the project
 
