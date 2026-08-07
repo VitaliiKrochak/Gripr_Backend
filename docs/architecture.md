@@ -18,6 +18,7 @@ src/
     cookies/
     decorators/
     guards/
+    origins/
     types/
   integrations/            # external systems
     supabase/
@@ -102,11 +103,20 @@ fetch(`${apiUrl}/api/auth/sign-out`, {
 
 `FRONTEND_URL` configures the allowed CORS origin and may contain a
 comma-separated list. Credentialed CORS is enabled and wildcard origins are
-rejected. Prefer serving the frontend and API from the same site. For Next.js
-server-side requests, `../jewelry` uses `createServerApiClient()` to forward the
-incoming cookie header explicitly because server-side HTTP clients have no
-browser cookie jar. The access cookie's `/` path makes it available on the
-incoming frontend request; the refresh cookie remains restricted to
+rejected. The opaque `null` origin is also invalid configuration. The same list
+is enforced by `BrowserOriginGuard` on every public authentication mutation.
+Those requests must include an exact allowed `Origin`; missing, opaque (`null`),
+and untrusted origins receive `403` before credentials or cookies are processed.
+CORS controls which responses browser JavaScript may read, while the guard is
+the CSRF boundary for cookie-setting authentication endpoints. Command-line
+clients and Swagger "Try it out" must also send an allowed origin; add the API's
+own origin to `FRONTEND_URL` when same-origin Swagger requests are required.
+
+Prefer serving the frontend and API from the same site. For Next.js server-side
+requests, `../jewelry` uses `createServerApiClient()` to forward the incoming
+cookie header explicitly because server-side HTTP clients have no browser
+cookie jar. The access cookie's `/` path makes it available on the incoming
+frontend request; the refresh cookie remains restricted to
 `/api/auth/refresh`.
 
 A production deployment with the frontend at `https://example.com` and the API

@@ -45,7 +45,10 @@ AUTH_COOKIE_DOMAIN=example.com
 
 `AUTH_COOKIE_DOMAIN` must contain only the shared parent domain: no protocol,
 port, or path. Authentication tokens remain in `HttpOnly` cookies and are never
-returned in JSON.
+returned in JSON. Public authentication mutations require an exact `Origin`
+match from the comma-separated `FRONTEND_URL` allowlist; requests with a
+missing, `null`, or untrusted origin receive `403`. CLI clients must therefore
+send an allowed `Origin` header.
 
 Authenticated frontends can inspect the current identity through
 `GET /api/auth/session`, which returns only `userId` and the server-derived

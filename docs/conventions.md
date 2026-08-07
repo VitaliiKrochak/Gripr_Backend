@@ -20,6 +20,9 @@
 - `app.setup.ts` adds the global `/api` prefix.
 - Mark unauthenticated controllers or handlers explicitly with `@Public()`.
   All other endpoints require authentication by default.
+- Protect public endpoints that create, rotate, or clear browser cookies with
+  `BrowserOriginGuard`. Their request `Origin` must exactly match an entry in
+  `FRONTEND_URL`; CORS configuration alone is not CSRF protection.
 - Add `@UseGuards(AdminGuard)` to every admin controller.
 - Keep controllers focused on HTTP input and output. Move reusable or non-trivial
   business logic into a service in the same feature.

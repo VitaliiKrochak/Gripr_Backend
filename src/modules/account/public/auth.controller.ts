@@ -7,11 +7,13 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
@@ -26,13 +28,18 @@ import {
   setAuthCookies,
 } from '../../../shared/cookies/auth.cookie';
 import { Public } from '../../../shared/decorators/public.decorator';
+import { BrowserOriginGuard } from '../../../shared/guards/browser.origin.guard';
 import { AuthResult } from '../account.auth.service';
 import { AccountAuthService } from '../account.auth.service';
 import { AuthCredentialsDto } from '../dto/auth.credentials.dto';
 import { AuthSessionDto } from '../dto/auth.session.dto';
 
 @Public()
+@UseGuards(BrowserOriginGuard)
 @ApiTags('Auth')
+@ApiForbiddenResponse({
+  description: 'The request Origin is missing or is not allowed',
+})
 @Controller('auth')
 export class PublicAuthController {
   constructor(private readonly accountAuthService: AccountAuthService) {}

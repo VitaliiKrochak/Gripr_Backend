@@ -80,6 +80,7 @@ describe('AppModule (e2e)', () => {
   it('clears auth cookies when the access token is missing or expired', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-out')
+      .set('Origin', 'https://example.com')
       .expect(204);
 
     expect(signOut).not.toHaveBeenCalled();
@@ -94,6 +95,7 @@ describe('AppModule (e2e)', () => {
   it('sets HttpOnly cookies without exposing tokens after sign-in', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-in')
+      .set('Origin', 'https://example.com')
       .send({ email: 'user@example.com', password: 'password' })
       .expect(200)
       .expect({
@@ -146,6 +148,7 @@ describe('AppModule (e2e)', () => {
 
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-in')
+      .set('Origin', 'https://example.com')
       .send({ email: 'user@example.com', password: 'password' })
       .expect(200);
     const cookies = response.headers['set-cookie'] as unknown as string[];
@@ -173,6 +176,7 @@ describe('AppModule (e2e)', () => {
   it('clears stale auth cookies when sign-up does not create a session', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-up')
+      .set('Origin', 'https://example.com')
       .set(
         'Cookie',
         'access_token=previous-access-token; refresh_token=previous-refresh-token',
@@ -192,6 +196,7 @@ describe('AppModule (e2e)', () => {
   it('rotates auth cookies using the refresh-token cookie', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/refresh')
+      .set('Origin', 'https://example.com')
       .set('Cookie', 'refresh_token=current-refresh-token')
       .expect(200)
       .expect({ userId: 'supabase-user-id', expiresAt });
@@ -212,6 +217,7 @@ describe('AppModule (e2e)', () => {
 
     const response = await request(app.getHttpServer())
       .post('/api/auth/sign-out')
+      .set('Origin', 'https://example.com')
       .set('Cookie', 'access_token=user-token')
       .expect(204);
     const cookies = response.headers['set-cookie'] as unknown as string[];
@@ -247,6 +253,42 @@ describe('AppModule (e2e)', () => {
         .expect(204);
     },
   );
+
+  it.each([
+    '/api/auth/sign-up',
+    '/api/auth/sign-in',
+    '/api/auth/refresh',
+    '/api/auth/sign-out',
+  ])('rejects %s when the request Origin is missing', async (path) => {
+    await request(app.getHttpServer())
+      .post(path)
+      .send({ email: 'user@example.com', password: 'password' })
+      .expect(403);
+  });
+
+  it.each(['https://attacker.example', 'null'])(
+    'rejects public auth mutations from Origin %s',
+    async (origin) => {
+      await request(app.getHttpServer())
+        .post('/api/auth/sign-in')
+        .set('Origin', origin)
+        .send({ email: 'user@example.com', password: 'password' })
+        .expect(403);
+
+      expect(signInWithPassword).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not revoke or clear a session for an untrusted Origin', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/sign-out')
+      .set('Origin', 'https://attacker.example')
+      .set('Cookie', 'access_token=user-token')
+      .expect(403);
+
+    expect(signOut).not.toHaveBeenCalled();
+    expect(response.headers['set-cookie']).toBeUndefined();
+  });
 
   it('publishes Swagger paths and cookie security schemes', async () => {
     const response = await request(app.getHttpServer())

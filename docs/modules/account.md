@@ -16,6 +16,13 @@ reads the refresh token from its cookie and rotates both cookies. Sign-out uses
 the access-token cookie when it is still available to revoke the Supabase
 session, and always clears both cookies locally.
 
+All four public authentication mutations use `BrowserOriginGuard`. The caller
+must send an `Origin` header that exactly matches one of the comma-separated
+origins in `FRONTEND_URL`. Missing, `null`, and untrusted origins receive `403`
+before the controller reads credentials or cookies. This is the login/logout
+CSRF boundary; credentialed CORS remains enabled separately for browser response
+access.
+
 Both cookies are `HttpOnly`, use `SameSite=Lax`, and are `Secure` in production.
 The access cookie uses `Path=/`; the refresh cookie uses
 `Path=/api/auth/refresh`. When `AUTH_COOKIE_DOMAIN` contains a bare parent
