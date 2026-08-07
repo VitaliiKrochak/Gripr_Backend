@@ -112,6 +112,35 @@ describe('AppModule (e2e)', () => {
     expect(response.body).not.toHaveProperty('refreshToken');
   });
 
+  it('rejects a session request without an access-token cookie', async () => {
+    await request(app.getHttpServer()).get('/api/auth/session').expect(401);
+
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it('returns the current non-admin identity', async () => {
+    await request(app.getHttpServer())
+      .get('/api/auth/session')
+      .set('Cookie', 'access_token=user-token')
+      .expect(200)
+      .expect({ userId: 'supabase-user-id', isAdmin: false });
+
+    expect(getUser).toHaveBeenCalledWith('user-token');
+  });
+
+  it('derives admin access from trusted app metadata', async () => {
+    getUser.mockResolvedValueOnce({
+      id: 'admin-user-id',
+      app_metadata: { role: 'admin' },
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/auth/session')
+      .set('Cookie', 'access_token=admin-token')
+      .expect(200)
+      .expect({ userId: 'admin-user-id', isAdmin: true });
+  });
+
   it('sets auth cookies for the configured parent domain', async () => {
     process.env.AUTH_COOKIE_DOMAIN = 'example.com';
 
@@ -230,6 +259,7 @@ describe('AppModule (e2e)', () => {
     expect(document.paths).toHaveProperty('/api/auth/sign-in');
     expect(document.paths).toHaveProperty('/api/auth/refresh');
     expect(document.paths).toHaveProperty('/api/auth/sign-out');
+    expect(document.paths).toHaveProperty('/api/auth/session');
     expect(document.paths).toHaveProperty('/api/health');
     expect(
       document.components?.securitySchemes?.['access-token'],

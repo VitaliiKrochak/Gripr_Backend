@@ -11,6 +11,7 @@ src/
   modules/                 # business features
     account/
       public/              # unauthenticated controllers
+      private/             # authenticated controllers
     health/
       public/
   shared/                  # reusable building blocks, no Nest modules
@@ -62,6 +63,9 @@ route design as every other endpoint.
 The admin frontend signs in through the same public auth endpoints as any other
 client. The backend authorizes every administrative operation with `AdminGuard`,
 so hiding admin screens in the frontend is never treated as access control.
+The private `/api/auth/session` endpoint returns the authenticated user ID and a
+server-derived `isAdmin` hint for frontend routing. It does not replace an admin
+guard on any protected operation.
 
 ## Admin role
 

@@ -8,6 +8,7 @@ JWTs or store passwords.
 - `POST /api/auth/sign-in`
 - `POST /api/auth/refresh`
 - `POST /api/auth/sign-out`
+- `GET /api/auth/session` (authenticated)
 
 Sign-up and sign-in accept `email` and `password`, set `HttpOnly` access and
 refresh cookies, and return only the user ID and access-token expiry. Refresh
@@ -23,3 +24,10 @@ the variable is unset or empty, the `Domain` attribute is omitted.
 
 The same sign-in endpoint is used by the customer site and the admin panel.
 Administrative operations are authorized individually with `AdminGuard`.
+
+`GET /api/auth/session` is implemented by the private controller and requires a
+valid access-token cookie through the global `AuthGuard`. It returns only
+`{ userId, isAdmin }`. The boolean is derived from the trusted
+`app_metadata.role` value attached by the guard. It helps the frontend choose
+the correct authenticated screen, but it is not authorization for an
+administrative operation; every admin controller still uses `AdminGuard`.

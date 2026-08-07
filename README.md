@@ -47,6 +47,10 @@ AUTH_COOKIE_DOMAIN=example.com
 port, or path. Authentication tokens remain in `HttpOnly` cookies and are never
 returned in JSON.
 
+Authenticated frontends can inspect the current identity through
+`GET /api/auth/session`, which returns only `userId` and the server-derived
+`isAdmin` flag.
+
 ## Compile and run the project
 
 ```bash
