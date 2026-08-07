@@ -34,8 +34,9 @@ $ npm install
 ```
 
 Copy `.env.example` to `.env` and configure Supabase before starting locally.
-Local development leaves `AUTH_COOKIE_DOMAIN` empty so auth cookies remain
-host-only. For a production frontend at `https://example.com` with this API at
+Local development leaves `AUTH_COOKIE_DOMAIN` empty so the access cookie
+remains host-only. The refresh cookie is always host-only to the API. For a
+production frontend at `https://example.com` with this API at
 `https://api.example.com`, use:
 
 ```dotenv
@@ -43,12 +44,14 @@ FRONTEND_URL=https://example.com
 AUTH_COOKIE_DOMAIN=example.com
 ```
 
-`AUTH_COOKIE_DOMAIN` must contain only the shared parent domain: no protocol,
-port, or path. Authentication tokens remain in `HttpOnly` cookies and are never
-returned in JSON. Public authentication mutations require an exact `Origin`
-match from the comma-separated `FRONTEND_URL` allowlist; requests with a
-missing, `null`, or untrusted origin receive `403`. CLI clients must therefore
-send an allowed `Origin` header.
+`AUTH_COOKIE_DOMAIN` applies only to the access cookie and must contain only the
+shared parent domain: no protocol, port, or path. The API sets the refresh
+cookie without `Domain`, so sibling hosts never receive it. Authentication
+tokens remain in `HttpOnly` cookies and are never returned in JSON. Public
+authentication mutations require an exact `Origin` match from the
+comma-separated `FRONTEND_URL` allowlist; requests with a missing, `null`, or
+untrusted origin receive `403`. CLI clients must therefore send an allowed
+`Origin` header.
 
 Authenticated frontends can inspect the current identity through
 `GET /api/auth/session`, which returns only `userId` and the server-derived

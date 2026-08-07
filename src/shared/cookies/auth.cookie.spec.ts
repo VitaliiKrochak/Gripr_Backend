@@ -47,7 +47,7 @@ describe('auth cookies', () => {
     }
   });
 
-  it('sets both cookies with the configured domain and their distinct paths', () => {
+  it('shares the access cookie while keeping the refresh cookie host-only', () => {
     process.env.AUTH_COOKIE_DOMAIN = 'example.com';
     const { response, cookie } = createResponse();
 
@@ -71,15 +71,15 @@ describe('auth cookies', () => {
       REFRESH_TOKEN_COOKIE,
       'refresh-token',
       expect.objectContaining({
-        domain: 'example.com',
         httpOnly: true,
         path: '/api/auth/refresh',
         sameSite: 'lax',
       }),
     );
+    expect(cookie.mock.calls[1]?.[2]).not.toHaveProperty('domain');
   });
 
-  it('clears both cookies with the same configured domain and paths', () => {
+  it('clears the shared access and host-only refresh cookies', () => {
     process.env.AUTH_COOKIE_DOMAIN = 'example.com';
     const { response, clearCookie } = createResponse();
 
@@ -91,11 +91,9 @@ describe('auth cookies', () => {
     );
     expect(clearCookie).toHaveBeenCalledWith(
       REFRESH_TOKEN_COOKIE,
-      expect.objectContaining({
-        domain: 'example.com',
-        path: '/api/auth/refresh',
-      }),
+      expect.objectContaining({ path: '/api/auth/refresh' }),
     );
+    expect(clearCookie.mock.calls[1]?.[1]).not.toHaveProperty('domain');
   });
 
   it.each([undefined, ''])(

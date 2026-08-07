@@ -143,7 +143,7 @@ describe('AppModule (e2e)', () => {
       .expect({ userId: 'admin-user-id', isAdmin: true });
   });
 
-  it('sets auth cookies for the configured parent domain', async () => {
+  it('shares only the access cookie with the configured parent domain', async () => {
     process.env.AUTH_COOKIE_DOMAIN = 'example.com';
 
     const response = await request(app.getHttpServer())
@@ -167,9 +167,7 @@ describe('AppModule (e2e)', () => {
     expect(refreshCookie).toEqual(
       expect.stringContaining('Path=/api/auth/refresh;'),
     );
-    expect(refreshCookie).toEqual(
-      expect.stringContaining('Domain=example.com;'),
-    );
+    expect(refreshCookie).not.toEqual(expect.stringContaining('Domain='));
     expect(refreshCookie).toEqual(expect.stringContaining('HttpOnly'));
   });
 
@@ -236,9 +234,7 @@ describe('AppModule (e2e)', () => {
     expect(refreshCookie).toEqual(
       expect.stringContaining('Path=/api/auth/refresh;'),
     );
-    expect(refreshCookie).toEqual(
-      expect.stringContaining('Domain=example.com;'),
-    );
+    expect(refreshCookie).not.toEqual(expect.stringContaining('Domain='));
   });
 
   it.each(['https://example.com', 'https://admin.example.com'])(

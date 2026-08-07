@@ -87,10 +87,12 @@ The frontend calls this API instead of Supabase directly. Access and refresh
 tokens are stored only in `HttpOnly` cookies and are never returned in JSON.
 The access cookie is available to the whole API; the refresh cookie is limited
 to `/api/auth/refresh`. Cookies use `SameSite=Lax` and become `Secure` in
-production. `AUTH_COOKIE_DOMAIN` optionally scopes both cookies to a shared
-parent domain. Its value is a bare domain without protocol, port, or path. An
-unset or empty value omits the `Domain` attribute and keeps cookies host-only,
-which is the local-development behavior.
+production. `AUTH_COOKIE_DOMAIN` optionally scopes only the access cookie to a
+shared parent domain so the Next.js host can receive it during server rendering.
+Its value is a bare domain without protocol, port, or path. The refresh cookie
+always omits `Domain` and therefore remains host-only to the API. An unset or
+empty value keeps both cookies host-only, which is the local-development
+behavior.
 
 The Next.js client must include credentials in browser requests:
 
@@ -115,9 +117,9 @@ own origin to `FRONTEND_URL` when same-origin Swagger requests are required.
 Prefer serving the frontend and API from the same site. For Next.js server-side
 requests, `../jewelry` uses `createServerApiClient()` to forward the incoming
 cookie header explicitly because server-side HTTP clients have no browser
-cookie jar. The access cookie's `/` path makes it available on the incoming
-frontend request; the refresh cookie remains restricted to
-`/api/auth/refresh`.
+cookie jar. The access cookie's `/` path and configured parent domain make it
+available on the incoming frontend request. The refresh cookie remains
+host-only to the API and restricted to `/api/auth/refresh`.
 
 A production deployment with the frontend at `https://example.com` and the API
 at `https://api.example.com` uses:
