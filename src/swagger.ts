@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
-import { ACCESS_TOKEN_COOKIE } from './shared/cookies/auth.cookie';
+import { ACCESS_TOKEN_COOKIE } from './shared/guards/auth.guard';
 
 function swaggerAuth() {
   const username = process.env.SWAGGER_USERNAME;

@@ -11,7 +11,6 @@ src/
     health/
       public/
   shared/                  # reusable building blocks, no Nest modules
-    cookies/
     decorators/
     guards/
     origins/
