@@ -3,7 +3,7 @@
 - Create one directory per feature under `src/modules`, for example
   `src/modules/catalog` or `src/modules/orders`.
 - Name project-owned files with lowercase, dot-separated segments, for example
-  `health.status.dto.ts`, `account.auth.service.ts`, and `app.e2e.spec.ts`. Do
+  `health.status.dto.ts`, `order.service.ts`, and `app.e2e.spec.ts`. Do
   not use hyphens or underscores as word separators. Preserve ecosystem-defined
   filenames such as `package-lock.json` and `nest-cli.json`.
 - Keep a feature flat while it is small. Introduce a descriptive subdirectory,
@@ -20,10 +20,10 @@
 - `app.setup.ts` adds the global `/api` prefix.
 - Mark unauthenticated controllers or handlers explicitly with `@Public()`.
   All other endpoints require authentication by default.
-- Protect public endpoints that create, rotate, or clear browser cookies with
-  `BrowserOriginGuard`. Their request `Origin` must exactly match an entry in
-  `FRONTEND_URL`; CORS configuration alone is not CSRF protection.
 - Add `@UseGuards(AdminGuard)` to every admin controller.
+- Add resource-level guards or ownership checks to operations whose permission
+  is narrower than "any authenticated user". Never rely on a Next.js page check
+  to authorize a NestJS operation.
 - Keep controllers focused on HTTP input and output. Move reusable or non-trivial
   business logic into a service in the same feature.
 - Register controllers and services in the owning Nest module. Export a provider
@@ -34,10 +34,12 @@
   branches on application state, or gains any other non-trivial behavior.
 - Put only reusable decorators, guards, types, and similarly small building
   blocks in `src/shared`. Do not create a Nest module in `shared`.
-- Keep auth cookie names and options centralized in `src/shared/cookies`.
 - Document every controller with Swagger tags, operations, response types, and
   the correct cookie security scheme.
 - Protect Swagger UI and its JSON/YAML documents with the credentials from
   `SWAGGER_USERNAME` and `SWAGGER_PASSWORD`.
 - Put third-party clients and their Nest modules in `src/integrations`, grouped
   by provider, such as `src/integrations/supabase`.
+- Keep sign-up, sign-in, refresh, sign-out, and browser cookie management in the
+  Next.js BFF. NestJS keeps only access-token verification and operation-level
+  authorization.

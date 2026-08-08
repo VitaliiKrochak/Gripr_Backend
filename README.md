@@ -24,8 +24,8 @@
 ## Description
 
 NestJS API for the jewelry application. The Next.js frontend is maintained in
-the sibling `../jewelry` repository and calls this API directly from the browser
-and from Server Components.
+the sibling `../jewelry` repository and exposes a same-origin BFF; browser code
+does not call this API origin directly.
 
 ## Project setup
 
@@ -33,29 +33,20 @@ and from Server Components.
 $ npm install
 ```
 
-Copy `.env.example` to `.env` and configure Supabase before starting locally.
-Local development leaves `AUTH_COOKIE_DOMAIN` empty so the access cookie
-remains host-only. The refresh cookie is always host-only to the API. For a
-production frontend at `https://example.com` with this API at
-`https://api.example.com`, use:
+Copy `.env.example` to `.env` and configure the Supabase URL and publishable key
+before starting locally. NestJS uses them only to verify access tokens for API
+operations; it does not own sign-up, sign-in, refresh, sign-out, or browser
+cookies.
 
-```dotenv
-FRONTEND_URL=https://example.com
-AUTH_COOKIE_DOMAIN=example.com
-```
+The sibling Next.js BFF owns the complete authentication lifecycle and forwards
+only the access cookie to this API. The global `AuthGuard` independently verifies
+that token with Supabase for every protected operation. Administrative
+controllers must additionally use `AdminGuard`; a role check performed by
+Next.js for page rendering never grants permission to a NestJS operation.
 
-`AUTH_COOKIE_DOMAIN` applies only to the access cookie and must contain only the
-shared parent domain: no protocol, port, or path. The API sets the refresh
-cookie without `Domain`, so sibling hosts never receive it. Authentication
-tokens remain in `HttpOnly` cookies and are never returned in JSON. Public
-authentication mutations require an exact `Origin` match from the
-comma-separated `FRONTEND_URL` allowlist; requests with a missing, `null`, or
-untrusted origin receive `403`. CLI clients must therefore send an allowed
-`Origin` header.
-
-Authenticated frontends can inspect the current identity through
-`GET /api/auth/session`, which returns only `userId` and the server-derived
-`isAdmin` flag.
+Normal browser traffic must reach NestJS through the BFF. `FRONTEND_URL` remains
+the credentialed CORS allowlist for trusted operational clients and local tools;
+it is not the application authorization boundary.
 
 ## Compile and run the project
 

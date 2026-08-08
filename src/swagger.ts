@@ -2,10 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
-import {
-  ACCESS_TOKEN_COOKIE,
-  REFRESH_TOKEN_COOKIE,
-} from './shared/cookies/auth.cookie';
+import { ACCESS_TOKEN_COOKIE } from './shared/cookies/auth.cookie';
 
 function swaggerAuth() {
   const username = process.env.SWAGGER_USERNAME;
@@ -46,7 +43,6 @@ export function setupSwagger(app: INestApplication): void {
     .setDescription('API for the jewelry store')
     .setVersion('1.0')
     .addCookieAuth(ACCESS_TOKEN_COOKIE, undefined, 'access-token')
-    .addCookieAuth(REFRESH_TOKEN_COOKIE, undefined, 'refresh-token')
     .build();
   const documentFactory = () => SwaggerModule.createDocument(app, config);
 

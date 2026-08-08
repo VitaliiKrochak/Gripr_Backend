@@ -2,16 +2,12 @@
 
 The project uses a small feature-first structure. A feature keeps its module,
 controllers, services, and DTOs together without empty architectural layers.
-The Next.js frontend lives in the sibling `../jewelry` repository and calls
-this backend directly; there is no Next.js API proxy between the browser and
-NestJS.
+The Next.js frontend lives in the sibling `../jewelry` repository and exposes
+a same-origin BFF between browser code and NestJS.
 
 ```text
 src/
   modules/                 # business features
-    account/
-      public/              # unauthenticated controllers
-      private/             # authenticated controllers
     health/
       public/
   shared/                  # reusable building blocks, no Nest modules
@@ -46,9 +42,8 @@ or `infrastructure` directories inside every feature.
 
 ## API audiences
 
-URLs describe resources and actions, not authentication mechanics. Public and
-private controllers may therefore share a resource prefix such as `/api/auth`.
-Their access rules remain visible in the source tree:
+URLs describe resources and actions, not authentication mechanics. Access rules
+remain visible in the source tree:
 
 - Controllers in `public` must use `@Public()` and do not require an access
   token.
@@ -61,12 +56,10 @@ Authentication is the default because `AuthGuard` is global. Audience folders
 do not add URL prefixes: administrative operations use the same resource-based
 route design as every other endpoint.
 
-The admin frontend signs in through the same public auth endpoints as any other
-client. The backend authorizes every administrative operation with `AdminGuard`,
-so hiding admin screens in the frontend is never treated as access control.
-The private `/api/auth/session` endpoint returns the authenticated user ID and a
-server-derived `isAdmin` hint for frontend routing. It does not replace an admin
-guard on any protected operation.
+Next.js may use the administrator role to decide whether to render a page, but
+the backend independently authorizes every administrative operation with
+`AdminGuard`. Hiding a screen or receiving a frontend session DTO is never
+treated as operation access control.
 
 ## Admin role
 
@@ -77,63 +70,42 @@ provide a public endpoint that lets a user promote their own account.
 
 ## Supabase
 
-`SupabaseModule` is global and exposes `SupabaseService`. The publishable-key
-client handles sign-up, sign-in, and token refresh. The secret-key client
-performs server-only operations and token verification. The secret key must
-never be sent to a browser, mobile client, response payload, or client-side
-environment.
+`SupabaseModule` is global and exposes `SupabaseService`. Its publishable-key
+client has one responsibility: verify the access token received from the BFF
+and return the trusted Supabase user to `AuthGuard`. NestJS does not create,
+refresh, revoke, or store sessions and never receives the refresh token.
 
-The frontend calls this API instead of Supabase directly. Access and refresh
-tokens are stored only in `HttpOnly` cookies and are never returned in JSON.
-The access cookie is available to the whole API; the refresh cookie is limited
-to `/api/auth/refresh`. Cookies use `SameSite=Lax` and become `Secure` in
-production. `AUTH_COOKIE_DOMAIN` optionally scopes only the access cookie to a
-shared parent domain so the Next.js host can receive it during server rendering.
-Its value is a bare domain without protocol, port, or path. The refresh cookie
-always omits `Domain` and therefore remains host-only to the API. An unset or
-empty value keeps both cookies host-only, which is the local-development
-behavior.
+Next.js owns sign-up, sign-in, refresh, sign-out, and the frontend-host
+`HttpOnly` cookies. For an operation, the BFF forwards only the access cookie.
+The global NestJS `AuthGuard` verifies it again and attaches the provider user to
+the request. Operation-specific guards then enforce roles or resource-level
+permissions. A backend `403` is final and is not reinterpreted by Next.js.
 
-The Next.js client must include credentials in browser requests:
+Browser code calls the same-origin Next.js BFF:
 
 ```ts
-fetch(`${apiUrl}/api/auth/sign-out`, {
+fetch('/api/auth/sign-out', {
   method: 'POST',
-  credentials: 'include',
 });
 ```
 
-`FRONTEND_URL` configures the allowed CORS origin and may contain a
-comma-separated list. Credentialed CORS is enabled and wildcard origins are
-rejected. The opaque `null` origin is also invalid configuration. The same list
-is enforced by `BrowserOriginGuard` on every public authentication mutation.
-Those requests must include an exact allowed `Origin`; missing, opaque (`null`),
-and untrusted origins receive `403` before credentials or cookies are processed.
-CORS controls which responses browser JavaScript may read, while the guard is
-the CSRF boundary for cookie-setting authentication endpoints. Command-line
-clients and Swagger "Try it out" must also send an allowed origin; add the API's
-own origin to `FRONTEND_URL` when same-origin Swagger requests are required.
+`FRONTEND_URL` configures a comma-separated credentialed CORS allowlist for
+trusted operational clients. Wildcard and opaque origins are rejected. Normal
+browser application traffic never calls the NestJS origin; the Next.js BFF
+enforces its own same-origin boundary before forwarding unsafe methods.
 
-Prefer serving the frontend and API from the same site. For Next.js server-side
-requests, `../jewelry` uses `createServerApiClient()` to forward the incoming
-cookie header explicitly because server-side HTTP clients have no browser
-cookie jar. The access cookie's `/` path and configured parent domain make it
-available on the incoming frontend request. The refresh cookie remains
-host-only to the API and restricted to `/api/auth/refresh`.
-
-A production deployment with the frontend at `https://example.com` and the API
-at `https://api.example.com` uses:
+A production frontend at `https://example.com` uses:
 
 ```dotenv
 FRONTEND_URL=https://example.com
-AUTH_COOKIE_DOMAIN=example.com
 ```
 
 ## Swagger
 
 Swagger UI is available at `/api/docs`, and the OpenAPI document is available
 at `/api/docs-json`. Authenticated endpoints use the `access-token` cookie
-security scheme. Session refresh uses the `refresh-token` scheme.
+security scheme. NestJS has no refresh-token scheme because refresh is owned by
+Next.js.
 
 Swagger routes are protected separately with HTTP Basic Auth. The browser asks
 for the credentials configured in `SWAGGER_USERNAME` and `SWAGGER_PASSWORD`
