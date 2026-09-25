@@ -47,6 +47,10 @@ For `in_stock` products, `stockQuantity` limits how many can be ordered and is
 reserved at checkout. Set their production days to the time needed to prepare
 and ship a ready piece.
 
+Products created from an approved open-license design carry `designCredit`
+(author, source, and license) and cannot be published while `basePrice` is 0;
+that `PATCH` answers `409`. See [designs](designs.md).
+
 ### Images
 
 - `POST /api/products/:id/images`

@@ -57,6 +57,23 @@ describe('rankRecommendations', () => {
     expect(ranked).toEqual(['b', 'a']);
   });
 
+  it('ranks open-model products after every own product', () => {
+    const ranked = rankRecommendations(
+      target,
+      [
+        candidate('open-match', {
+          collectionId: 'aurora',
+          tagIds: ['minimal', 'wedding'],
+          isOpenModel: true,
+        }),
+        candidate('own-unrelated'),
+      ],
+      10,
+    );
+
+    expect(ranked).toEqual(['own-unrelated', 'open-match']);
+  });
+
   it('respects the limit', () => {
     expect(
       rankRecommendations(target, [candidate('a'), candidate('b')], 1),

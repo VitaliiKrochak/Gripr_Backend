@@ -22,6 +22,7 @@ src/
     custom.requests/       # custom piece requests, quotes, custom orders
     delivery/              # Nova Poshta city and branch lookup
     dashboard/             # admin summary
+    designs/               # open-license Sketchfab import and review queue
     health/
   shared/                  # reusable building blocks, no Nest modules
     decorators/
@@ -37,6 +38,7 @@ src/
     database/              # Drizzle schema, client, and seed
     liqpay/
     novaposhta/
+    sketchfab/             # public model search
     supabase/
     telegram/              # Telegram Gateway API
     turbosms/              # Viber with SMS fallback
@@ -192,6 +194,17 @@ selected option values; amounts sent by clients are never trusted.
 - **Nova Poshta** provides city and branch lookup for checkout. Orders store
   the chosen refs and names, and the TTN once shipped.
 - **Telegram Gateway** and **TurboSMS** deliver sign-in codes.
+- **Sketchfab** search supplies open-license jewelry model metadata to the
+  [designs](modules/designs.md) importer. Approved previews are copied into
+  Cloudinary server-side with `CloudinaryService.uploadFromUrl()`.
+
+## Scheduled jobs
+
+`ScheduleModule.forRoot()` in `app.module.ts` enables `@nestjs/schedule`
+decorators. Jobs run inside the API process, so each running API instance
+executes them; a job must tolerate that or guard itself. The only job is the
+nightly design import (02:00 Europe/Kyiv), which holds an in-process run lock
+and is disabled with `DESIGN_IMPORT_ENABLED=false`.
 
 ## Payments
 
@@ -258,7 +271,8 @@ they do not create an application user or grant access to private API endpoints.
 Unit tests (`*.spec.ts` next to the code) cover pure business logic such as
 pricing, order transitions, and signatures. End-to-end tests in `test/` boot the
 full application against an in-process PGlite Postgres database with the real
-migrations and seed applied. Supabase, Telegram Gateway, TurboSMS, and Nova
-Poshta are replaced with test doubles; no network access or Docker is needed.
+migrations and seed applied. Supabase, Telegram Gateway, TurboSMS, Nova
+Poshta, and (where needed) Sketchfab and Cloudinary are replaced with test
+doubles; no network access or Docker is needed.
 PGlite requires Node's `--experimental-vm-modules` flag, which the
 `test:e2e` script sets.

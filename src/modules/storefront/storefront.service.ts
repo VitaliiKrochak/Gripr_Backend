@@ -44,6 +44,11 @@ import {
   configureProduct,
   ConfigurationError,
 } from '../catalog/product.configuration';
+import {
+  defaultProductOrder,
+  isOpenModel,
+  positionOrder,
+} from '../catalog/product.order';
 import type { ProductDetails } from '../catalog/products.service';
 import { ReferenceDataService } from '../catalog/reference.data.service';
 import { rankRecommendations } from './recommendations';
@@ -145,10 +150,11 @@ export class StorefrontService {
         tagIds: sql<
           string[]
         >`coalesce((select array_agg(${qualified(productTags.tagId)}) from ${productTags} where ${qualified(productTags.productId)} = ${qualified(products.id)}), '{}')`,
+        isOpenModel,
       })
       .from(products)
       .where(isPublished)
-      .orderBy(...this.catalog.defaultOrder())
+      .orderBy(...defaultProductOrder())
       .limit(RECOMMENDATION_CANDIDATES);
 
     const ids = rankRecommendations(
@@ -330,6 +336,7 @@ export class StorefrontService {
           })),
         })),
       defaultQuote,
+      designCredit: product.designCredit,
     };
   }
 
@@ -472,10 +479,7 @@ export class StorefrontService {
       case 'price_desc':
         return [sql`${products.basePrice} desc`];
       default:
-        return [
-          sql`${products.isFeatured} desc`,
-          ...this.catalog.defaultOrder(),
-        ];
+        return [sql`${products.isFeatured} desc`, ...positionOrder()];
     }
   }
 }

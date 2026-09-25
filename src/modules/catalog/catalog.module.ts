@@ -27,6 +27,11 @@ import { ReferenceDataService } from './reference.data.service';
     ProductOptionsService,
     ProductCatalogService,
   ],
-  exports: [ReferenceDataService, ProductCatalogService],
+  exports: [
+    ReferenceDataService,
+    ProductCatalogService,
+    ProductsService,
+    ProductImagesService,
+  ],
 })
 export class CatalogModule {}

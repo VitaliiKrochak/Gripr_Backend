@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiNoContentResponse,
@@ -79,6 +80,10 @@ export class AdminProductsController {
       'Update a product; `status` publishes or archives it and `tagIds` replaces its tags',
   })
   @ApiOkResponse({ type: AdminProductDto })
+  @ApiConflictResponse({
+    description:
+      'Slug already exists, or a product made from an open design is published without a price',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,

@@ -28,6 +28,7 @@ import type {
   PublicationStatus,
 } from '../../../integrations/database/database.schema';
 import { PaginationQueryDto } from '../../../shared/pagination/pagination.query.dto';
+import { DesignCreditDto } from '../../designs/dto/design.credit.dto';
 import {
   SLUG_MESSAGE,
   SLUG_PATTERN,
@@ -383,4 +384,7 @@ export class AdminProductDto {
   tags: TagDto[];
   images: ProductImageDto[];
   optionGroups: OptionGroupDto[];
+  /** Set when the product was made from an imported open-license design. */
+  @ApiProperty({ type: DesignCreditDto, nullable: true })
+  designCredit: DesignCreditDto | null;
 }

@@ -27,6 +27,7 @@ import { ImageDto } from '../catalog/dto/collection.dto';
 import { ProductCardDto } from '../catalog/dto/product.card.dto';
 import { ProductSpecificationDto } from '../catalog/dto/product.dto';
 import { GemstoneDto, MetalDto, TagDto } from '../catalog/dto/reference.dto';
+import { DesignCreditDto } from '../designs/dto/design.credit.dto';
 
 export const PRODUCT_SORTS = [
   'featured',
@@ -222,6 +223,9 @@ export class StorefrontProductDto {
   optionGroups: StorefrontOptionGroupDto[];
   /** Price and timing of the default configuration, if it is valid. */
   defaultQuote: QuoteDto | null;
+  /** Public license and author credit for products made from open designs. */
+  @ApiProperty({ type: DesignCreditDto, nullable: true })
+  designCredit: DesignCreditDto | null;
 }
 
 export class StorefrontCollectionDto {

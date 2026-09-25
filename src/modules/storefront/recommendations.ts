@@ -4,11 +4,14 @@ export interface RecommendationCandidate {
   type: string;
   isHot: boolean;
   tagIds: string[];
+  /** Products made from open-license designs always rank after our own. */
+  isOpenModel?: boolean;
 }
 
 /**
- * Ranks related products: same collection first, then the number of shared
- * tags, then the same product type, then hot items. Ties keep input order.
+ * Ranks related products: own products before open models, then same
+ * collection, the number of shared tags, the same product type, and hot
+ * items. Ties keep input order.
  */
 export function rankRecommendations(
   target: RecommendationCandidate,
@@ -23,6 +26,7 @@ export function rankRecommendations(
       id: candidate.id,
       index,
       score: [
+        candidate.isOpenModel ? 0 : 1,
         target.collectionId && candidate.collectionId === target.collectionId
           ? 1
           : 0,

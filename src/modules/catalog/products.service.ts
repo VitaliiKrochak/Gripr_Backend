@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -19,6 +20,7 @@ import {
 import { qualified } from '../../integrations/database/database.sql';
 import { toOffset, toPage } from '../../shared/pagination/pagination';
 import { withConflictMapping } from '../../shared/errors/conflict.mapping';
+import { toDesignCredit } from '../designs/design.credit';
 import { publicationFields } from './collections.service';
 import type {
   AdminProductDto,
@@ -119,6 +121,16 @@ export class ProductsService {
       values.productionDaysMax ?? current.productionDaysMax,
     );
 
+    if (
+      current.designCredit &&
+      (values.status ?? current.status) === 'published' &&
+      (values.basePrice ?? current.basePrice) <= 0
+    ) {
+      throw new ConflictException(
+        'Set a price before publishing a product made from an open design',
+      );
+    }
+
     await withConflictMapping(
       this.db.transaction(async (tx) => {
         if (Object.keys(values).length) {
@@ -207,6 +219,16 @@ export async function loadProductDetails(db: Database, where: SQL) {
           },
         },
       },
+      designCandidate: {
+        columns: {
+          title: true,
+          authorName: true,
+          authorUrl: true,
+          source: true,
+          sourceUrl: true,
+          license: true,
+        },
+      },
     },
   });
 
@@ -214,13 +236,14 @@ export async function loadProductDetails(db: Database, where: SQL) {
     return undefined;
   }
 
-  const { productTags: links, ...rest } = product;
+  const { productTags: links, designCandidate, ...rest } = product;
 
   return {
     ...rest,
     tags: links
       .map((link) => link.tag)
       .sort((a, b) => a.sortOrder - b.sortOrder),
+    designCredit: toDesignCredit(designCandidate),
   };
 }
 
