@@ -24,7 +24,7 @@
 ## Description
 
 NestJS API for the jewelry application. The Next.js frontend is maintained in
-the sibling `../jewelry` repository and exposes a same-origin BFF; browser code
+the sibling `../Gripr_frontend` repository and exposes a same-origin BFF; browser code
 does not call this API origin directly.
 
 ## Project setup
@@ -47,6 +47,55 @@ Next.js for page rendering never grants permission to a NestJS operation.
 Normal browser traffic must reach NestJS through the BFF. `FRONTEND_URL` remains
 the credentialed CORS allowlist for trusted operational clients and local tools;
 it is not the application authorization boundary.
+
+The frontend integration guide is [`docs/frontend.md`](docs/frontend.md).
+
+### Database
+
+Business data lives in the `app` schema of the Supabase Postgres database and
+is accessed with Drizzle ORM. Set `DATABASE_URL` to the Supabase pooler
+connection string, then apply the migrations and seed the reference data
+(metals, gemstones, production stages):
+
+```bash
+$ npm run db:migrate
+$ npm run db:seed
+```
+
+After changing `src/integrations/database/schema/*.schema.ts`, generate a new
+migration with `npm run db:generate` and commit the files in `drizzle/`.
+
+### Phone sign-in codes
+
+1. In Supabase Auth, enable the phone provider.
+2. Add a **Send SMS hook** (HTTPS) pointing to
+   `https://<api-host>/api/auth/sms-hook` and copy its secret into
+   `SUPABASE_SMS_HOOK_SECRET`.
+3. Configure at least one delivery channel: `TELEGRAM_GATEWAY_TOKEN` (Telegram
+   Gateway API) and/or `TURBOSMS_TOKEN` with an approved `TURBOSMS_SENDER`
+   (Viber with SMS fallback). Telegram is tried first.
+
+### Administrators
+
+Grant the admin role by setting `app_metadata.role` to `admin` on the Supabase
+user (dashboard or service-role script). Sign in with that phone number to use
+the admin endpoints.
+
+### Integrations
+
+- Cloudinary: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`,
+  `CLOUDINARY_API_SECRET`.
+- LiqPay: `LIQPAY_PUBLIC_KEY`, `LIQPAY_PRIVATE_KEY`, `LIQPAY_SANDBOX`,
+  `LIQPAY_SIGNATURE_ALGORITHM`, `LIQPAY_RESULT_URL`, and `PUBLIC_API_URL`. The
+  callback URL `${PUBLIC_API_URL}/api/payments/liqpay/callback` must be
+  reachable from the internet (use a tunnel for local testing).
+- Fiscal receipts (required in production): set up the ПРРО in the LiqPay
+  dashboard and set `LIQPAY_RRO_GOOD_ID`; see
+  [`docs/modules/payments.md`](docs/modules/payments.md#fiscal-receipts).
+- Nova Poshta: `NOVAPOSHTA_API_KEY`.
+
+All variables are listed in `.env.example`; the application refuses to start
+when a required one is missing.
 
 ## Compile and run the project
 
@@ -73,6 +122,12 @@ $ npm run test:e2e
 # test coverage
 $ npm run test:cov
 ```
+
+End-to-end tests run the whole application against an in-process PGlite
+database with the real migrations and seed. They need no Docker, database, or
+network access; external providers are replaced with test doubles. The
+`test:e2e` script enables Node's `--experimental-vm-modules` flag, which PGlite
+requires.
 
 ## Deployment
 

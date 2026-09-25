@@ -8,7 +8,7 @@ async function bootstrap() {
     process.loadEnvFile('.env');
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   setupApp(app);
 
   await app.listen(process.env.PORT ?? 4000);
