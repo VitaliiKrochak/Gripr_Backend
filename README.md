@@ -110,6 +110,15 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+### Windows launcher
+
+`start-gripr.bat` starts this API (`start:dev`) and the storefront from
+`../Gripr_frontend` (`dev`) in two windows. It checks for Node.js and both
+`.env` files, runs `npm ci` where `node_modules` is missing, and passes the
+detected public IP to the storefront as `ALLOWED_DEV_ORIGINS` so visitors can
+reach the dev server through router port forwarding of TCP 3000. Run it once as
+administrator to add the Windows Firewall rule for port 3000.
+
 ## Run tests
 
 ```bash
