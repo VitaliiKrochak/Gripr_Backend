@@ -30,6 +30,7 @@ import {
   StorefrontHomeDto,
   StorefrontProductDto,
   StorefrontProductQueryDto,
+  StorefrontReferenceDto,
 } from '../storefront.dto';
 import { StorefrontService } from '../storefront.service';
 
@@ -53,6 +54,16 @@ export class PublicStorefrontController {
   @ApiOkResponse({ type: StorefrontFiltersDto })
   filters(): Promise<StorefrontFiltersDto> {
     return this.storefront.filters();
+  }
+
+  @Get('reference')
+  @ApiOperation({
+    summary:
+      'Active metals, gemstones, and finishing operations for request forms',
+  })
+  @ApiOkResponse({ type: StorefrontReferenceDto })
+  reference(): Promise<StorefrontReferenceDto> {
+    return this.storefront.reference();
   }
 
   @Get('products')

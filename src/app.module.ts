@@ -20,6 +20,7 @@ import { DesignsModule } from './modules/designs/designs.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
+import { MessagesModule } from './modules/messages/messages.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ProductionModule } from './modules/production/production.module';
@@ -49,6 +50,7 @@ import { AuthGuard } from './shared/guards/auth.guard';
     PaymentsModule,
     ProductionModule,
     CustomRequestsModule,
+    MessagesModule,
     DeliveryModule,
     DashboardModule,
     DesignsModule,

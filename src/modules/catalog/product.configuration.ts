@@ -12,6 +12,9 @@ export interface ConfigurableValue {
   productionDaysDelta: number;
   isDefault: boolean;
   isAvailable: boolean;
+  /** Extra metal in grams, e.g. for a larger size. */
+  weightDeltaGrams?: number;
+  metal?: { pricePerGram: number | null } | null;
 }
 
 export interface ConfigurableGroup {
@@ -22,15 +25,35 @@ export interface ConfigurableGroup {
   values: ConfigurableValue[];
 }
 
+export interface ConfigurableStone {
+  quantity: number;
+  unitPrice: number;
+}
+
 export interface ConfigurableProduct {
+  /** Manufacturing price in kopiykas. */
   basePrice: number;
   productionDaysMin: number;
   productionDaysMax: number;
+  /** Metal weight of the default size; enables metal pricing per gram. */
+  weightGrams?: number | null;
+  stones?: ConfigurableStone[];
   optionGroups: ConfigurableGroup[];
+}
+
+/** Parts of the unit price, all in kopiykas. */
+export interface PriceBreakdown {
+  manufacturing: number;
+  metal: number;
+  stones: number;
+  options: number;
+  /** Metal weight of the configuration, `null` when the product has none. */
+  weightGrams: number | null;
 }
 
 export interface Configuration {
   unitPrice: number;
+  breakdown: PriceBreakdown;
   productionDaysMin: number;
   productionDaysMax: number;
   /** Explicit selection including defaults applied for required groups. */
@@ -142,9 +165,12 @@ export function configureProduct(
     (sum, value) => sum + value.productionDaysDelta,
     0,
   );
+  const breakdown = priceBreakdown(product, values);
   const unitPrice =
-    product.basePrice +
-    values.reduce((sum, value) => sum + value.priceDelta, 0);
+    breakdown.manufacturing +
+    breakdown.metal +
+    breakdown.stones +
+    breakdown.options;
 
   if (unitPrice < 0) {
     throw new ConfigurationError('Configured price cannot be negative');
@@ -152,12 +178,60 @@ export function configureProduct(
 
   return {
     unitPrice,
+    breakdown,
     productionDaysMin: Math.max(0, product.productionDaysMin + daysDelta),
     productionDaysMax: Math.max(0, product.productionDaysMax + daysDelta),
     optionValueIds: selectedOptions.map((selected) => selected.valueId),
     selectedOptions,
     engravingText: engraving,
   };
+}
+
+function priceBreakdown(
+  product: ConfigurableProduct,
+  selected: ConfigurableValue[],
+): PriceBreakdown {
+  const weightGrams =
+    product.weightGrams == null
+      ? null
+      : Math.max(
+          0,
+          selected.reduce(
+            (sum, value) => sum + (value.weightDeltaGrams ?? 0),
+            product.weightGrams,
+          ),
+        );
+  const pricePerGram =
+    selected.find((value) => value.metal?.pricePerGram != null)?.metal
+      ?.pricePerGram ?? 0;
+
+  return {
+    manufacturing: product.basePrice,
+    metal: weightGrams === null ? 0 : Math.round(pricePerGram * weightGrams),
+    stones: (product.stones ?? []).reduce(
+      (sum, stone) => sum + stone.quantity * stone.unitPrice,
+      0,
+    ),
+    options: selected.reduce((sum, value) => sum + value.priceDelta, 0),
+    weightGrams,
+  };
+}
+
+/**
+ * Price shown on product cards: the default configuration, or the fixed
+ * parts of the price when the product has no complete default.
+ */
+export function priceFrom(product: ConfigurableProduct): number {
+  try {
+    return configureProduct(product, []).unitPrice;
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) {
+      throw error;
+    }
+
+    const breakdown = priceBreakdown(product, []);
+    return Math.max(0, breakdown.manufacturing + breakdown.stones);
+  }
 }
 
 export interface PricedLine {

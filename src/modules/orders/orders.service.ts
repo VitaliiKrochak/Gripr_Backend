@@ -26,6 +26,8 @@ import type {
 } from '../../integrations/database/database.client';
 import {
   customers,
+  customRequests,
+  messages,
   orderItems,
   orders,
   orderStatusHistory,
@@ -33,8 +35,10 @@ import {
   products,
 } from '../../integrations/database/database.schema';
 import type {
+  JewelrySpecification,
   Order,
   OrderStatus,
+  SelectedOption,
 } from '../../integrations/database/database.schema';
 import { qualified } from '../../integrations/database/database.sql';
 import { toOffset, toPage } from '../../shared/pagination/pagination';
@@ -60,15 +64,69 @@ import {
   CUSTOMER_CANCELLABLE,
   ORDER_TRANSITIONS,
   OrderTransitionError,
+  statusAfterPayment,
   statusTimestamps,
 } from './order.status';
+
+function customOrderPricing(pricing: CustomOrderInput['pricing']) {
+  if (pricing.kind === 'legacy') {
+    return {
+      status: 'pending_payment' as OrderStatus,
+      total: pricing.price,
+      depositAmount: pricing.depositAmount,
+      modelPaymentAmount: null,
+      productionPaymentAmount: null,
+    };
+  }
+
+  const modelPaymentAmount = pricing.requiresModel ? pricing.modelPrice : 0;
+  let status: OrderStatus;
+
+  if (pricing.requiresModel) {
+    status = modelPaymentAmount > 0 ? 'awaiting_model_payment' : 'modeling';
+  } else {
+    status =
+      pricing.productionPrepayment > 0
+        ? 'awaiting_production_payment'
+        : 'in_production';
+  }
+
+  return {
+    status,
+    total: modelPaymentAmount + pricing.productPrice,
+    depositAmount: null,
+    modelPaymentAmount,
+    productionPaymentAmount: pricing.productionPrepayment,
+  };
+}
+
+/** Legacy quote: optional deposit, then the remainder. */
+export interface LegacyCustomPricing {
+  kind: 'legacy';
+  price: number;
+  depositAmount: number | null;
+}
+
+/** Proposal: 3D model prepayment, production prepayment, final payment. */
+export interface StagedCustomPricing {
+  kind: 'staged';
+  requiresModel: boolean;
+  modelPrice: number;
+  productPrice: number;
+  productionPrepayment: number;
+}
+
 export interface CustomOrderInput {
   customerId: string;
   contact: OrderContactDto & { contactPhone: string };
   productName: string;
   imageUrl: string | null;
-  price: number;
-  depositAmount: number | null;
+  /** Catalog product a customization is based on. */
+  productId?: string | null;
+  productSlug?: string | null;
+  selectedOptions?: SelectedOption[];
+  specification?: JewelrySpecification | null;
+  pricing: LegacyCustomPricing | StagedCustomPricing;
   productionDaysMin: number;
   productionDaysMax: number;
   changedBy: string;
@@ -176,20 +234,24 @@ export class OrdersService {
     return this.getForCustomer(user, orderId);
   }
 
-  /** Creates a single-item custom order from an accepted quote. */
+  /** Creates a single-item custom order from an approved proposal or quote. */
   async createCustomOrder(
     tx: DatabaseExecutor,
     input: CustomOrderInput,
   ): Promise<string> {
+    const pricing = customOrderPricing(input.pricing);
     const [order] = await tx
       .insert(orders)
       .values({
         kind: 'custom',
         customerId: input.customerId,
         ...this.contactColumns(input.contact, input.contact.contactPhone),
-        subtotal: input.price,
-        total: input.price,
-        depositAmount: input.depositAmount,
+        status: pricing.status,
+        subtotal: pricing.total,
+        total: pricing.total,
+        depositAmount: pricing.depositAmount,
+        modelPaymentAmount: pricing.modelPaymentAmount,
+        productionPaymentAmount: pricing.productionPaymentAmount,
         productionDaysMin: input.productionDaysMin,
         productionDaysMax: input.productionDaysMax,
       })
@@ -197,22 +259,103 @@ export class OrdersService {
 
     await tx.insert(orderItems).values({
       orderId: order.id,
+      productId: input.productId ?? null,
+      productSlug: input.productSlug ?? null,
       productName: input.productName,
       imageUrl: input.imageUrl,
+      selectedOptions: input.selectedOptions ?? [],
+      specification: input.specification ?? null,
       quantity: 1,
-      unitPrice: input.price,
-      lineTotal: input.price,
+      unitPrice: pricing.total,
+      lineTotal: pricing.total,
       productionDaysMin: input.productionDaysMin,
       productionDaysMax: input.productionDaysMax,
     });
     await tx.insert(orderStatusHistory).values({
       orderId: order.id,
-      toStatus: 'pending_payment',
+      toStatus: pricing.status,
       changedBy: input.changedBy,
     });
     await this.saveDefaults(tx, input.customerId, input.contact);
 
     return order.id;
+  }
+
+  /** The customer approves the 3D model; production prepayment becomes due. */
+  async approveModel(user: User, orderId: string): Promise<OrderDto> {
+    await this.db.transaction(async (tx) => {
+      const order = await this.lockOwnInStatus(
+        tx,
+        user,
+        orderId,
+        'model_review',
+      );
+      await this.applyTransition(tx, order, 'awaiting_production_payment', {
+        note: 'Модель погоджено клієнтом',
+        changedBy: user.id,
+      });
+      const awaiting: Order = {
+        ...order,
+        status: 'awaiting_production_payment',
+      };
+      const next = statusAfterPayment(awaiting);
+
+      if (next) {
+        await this.applyTransition(tx, awaiting, next, {
+          note: 'Передоплату за виробництво вже отримано',
+          changedBy: user.id,
+        });
+      }
+    });
+
+    return this.getForCustomer(user, orderId);
+  }
+
+  /** The customer asks for model changes; the order returns to modeling. */
+  async requestModelChanges(
+    user: User,
+    orderId: string,
+    comment: string,
+  ): Promise<OrderDto> {
+    await this.db.transaction(async (tx) => {
+      const order = await this.lockOwnInStatus(
+        tx,
+        user,
+        orderId,
+        'model_review',
+      );
+      await this.applyTransition(tx, order, 'modeling', {
+        note: comment,
+        changedBy: user.id,
+      });
+      await tx.insert(messages).values({
+        orderId,
+        authorId: user.id,
+        authorRole: 'customer',
+        body: comment,
+      });
+    });
+
+    return this.getForCustomer(user, orderId);
+  }
+
+  private async lockOwnInStatus(
+    tx: DatabaseExecutor,
+    user: User,
+    orderId: string,
+    status: OrderStatus,
+  ): Promise<Order> {
+    const order = await this.lock(tx, orderId);
+
+    if (order.customerId !== user.id) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.status !== status) {
+      throw new ConflictException('The order is not waiting for this action');
+    }
+
+    return order;
   }
 
   contactPhone(user: User, requested?: string): string {
@@ -365,8 +508,8 @@ export class OrdersService {
   }
 
   /**
-   * Adds a successful payment to the order balance and marks a pending order
-   * as paid. Runs inside the caller's transaction.
+   * Adds a successful payment to the order balance and advances an order
+   * that was waiting for it. Runs inside the caller's transaction.
    */
   async applyPayment(
     tx: DatabaseExecutor,
@@ -379,9 +522,10 @@ export class OrdersService {
       .set({ paidAmount: sql`${orders.paidAmount} + ${amount}` })
       .where(eq(orders.id, orderId))
       .returning();
+    const next = statusAfterPayment(order);
 
-    if (order.status === 'pending_payment') {
-      await this.applyTransition(tx, order, 'paid', {
+    if (next) {
+      await this.applyTransition(tx, order, next, {
         note: 'Оплату отримано',
         changedBy,
       });
@@ -559,7 +703,13 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    return order;
+    const [request] = await this.db
+      .select({ id: customRequests.id })
+      .from(customRequests)
+      .where(eq(customRequests.orderId, order.id))
+      .limit(1);
+
+    return { ...order, customRequestId: request?.id ?? null };
   }
 
   private toCustomerDto(

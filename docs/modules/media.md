@@ -7,7 +7,7 @@ Signs direct browser uploads to Cloudinary. Files never pass through the API.
 Admin:
 
 - `POST /api/media/upload-signature` with `{ "folder": "products" |
-  "collections" | "production" }`: returns `cloudName`, `apiKey`, `timestamp`,
+  "collections" | "production" | "messages" }`: returns `cloudName`, `apiKey`, `timestamp`,
   `folder`, `signature`, and `uploadUrl`.
 - `POST /api/media/destroy` with `{ "publicId": "jewelry/..." }`: deletes an
   application asset (`204`). Only ids under the `jewelry/` root are accepted.
@@ -15,7 +15,8 @@ Admin:
 Private (signed-in customer):
 
 - `POST /api/customers/me/uploads/signature`: signs uploads into
-  `jewelry/custom-requests/<userId>` for custom request reference images.
+  `jewelry/custom-requests/<userId>` for custom request reference images and
+  message attachments.
 
 ## Upload flow
 

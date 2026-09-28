@@ -1,20 +1,29 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { PUBLICATION_STATUSES } from '../../../integrations/database/database.schema';
-import type { PublicationStatus } from '../../../integrations/database/database.schema';
+import {
+  PRODUCT_TYPES,
+  PUBLICATION_STATUSES,
+} from '../../../integrations/database/database.schema';
+import type {
+  ProductType,
+  PublicationStatus,
+} from '../../../integrations/database/database.schema';
 import { ImageAssetDto } from '../../../shared/media/image.asset.dto';
 import { SLUG_MESSAGE, SLUG_PATTERN } from './reference.dto';
 
@@ -82,6 +91,17 @@ export class CreateCollectionDto {
   @IsString()
   @MaxLength(500)
   seoDescription?: string;
+
+  /**
+   * Products of the collection in display order. Replaces the current list;
+   * a product listed here moves out of its previous collection.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  productIds?: string[];
 }
 
 export class UpdateCollectionDto extends PartialType(CreateCollectionDto) {}
@@ -122,4 +142,20 @@ export class CollectionDto {
 
 export class AdminCollectionDto extends CollectionDto {
   productCount: number;
+}
+
+export class CollectionProductDto {
+  id: string;
+  slug: string;
+  name: string;
+  @ApiProperty({ enum: PRODUCT_TYPES })
+  type: ProductType;
+  @ApiProperty({ enum: PUBLICATION_STATUSES })
+  status: PublicationStatus;
+  imageUrl: string | null;
+}
+
+export class AdminCollectionDetailsDto extends CollectionDto {
+  /** Products in display order. */
+  products: CollectionProductDto[];
 }

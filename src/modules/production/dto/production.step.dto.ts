@@ -30,6 +30,15 @@ export class CreateProductionStepsDto {
   stageIds?: string[];
 }
 
+export class ReorderProductionStepsDto {
+  /** Step ids in the desired order. */
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  ids: string[];
+}
+
 export class UpdateProductionStepDto {
   @IsOptional()
   @ApiProperty({ enum: PRODUCTION_STEP_STATES, required: false })

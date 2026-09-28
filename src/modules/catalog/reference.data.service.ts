@@ -3,22 +3,27 @@ import { asc, eq } from 'drizzle-orm';
 import { DATABASE } from '../../integrations/database/database.client';
 import type { Database } from '../../integrations/database/database.client';
 import {
+  finishingOptions,
   gemstones,
   metals,
   tags,
 } from '../../integrations/database/database.schema';
 import { withConflictMapping } from '../../shared/errors/conflict.mapping';
 import type {
+  CreateFinishingOptionDto,
   CreateGemstoneDto,
   CreateMetalDto,
   CreateTagDto,
+  FinishingOptionDto,
   GemstoneDto,
   MetalDto,
   TagDto,
+  UpdateFinishingOptionDto,
   UpdateGemstoneDto,
   UpdateMetalDto,
   UpdateTagDto,
 } from './dto/reference.dto';
+import { productsWithMetal, refreshPriceFrom } from './product.pricing';
 
 function found<T>(row: T | undefined, message: string): T {
   if (!row) {
@@ -28,7 +33,7 @@ function found<T>(row: T | undefined, message: string): T {
   return row;
 }
 
-/** Metals, gemstones, and tags managed by administrators. */
+/** Metals, gemstones, finishing options, and tags managed by administrators. */
 @Injectable()
 export class ReferenceDataService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
@@ -50,8 +55,20 @@ export class ReferenceDataService {
   }
 
   async updateMetal(id: string, dto: UpdateMetalDto): Promise<MetalDto> {
-    const [row] = await withConflictMapping(
-      this.db.update(metals).set(dto).where(eq(metals.id, id)).returning(),
+    const row = await withConflictMapping(
+      this.db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(metals)
+          .set(dto)
+          .where(eq(metals.id, id))
+          .returning();
+
+        if (updated && dto.pricePerGram !== undefined) {
+          await refreshPriceFrom(tx, productsWithMetal(tx, id));
+        }
+
+        return updated;
+      }),
       { unique: 'Metal code already exists' },
     );
     return found(row, 'Metal not found');
@@ -102,6 +119,53 @@ export class ReferenceDataService {
       { inUse: 'Gemstone is used by product options; deactivate it instead' },
     );
     found(row, 'Gemstone not found');
+  }
+
+  listFinishingOptions(activeOnly = false): Promise<FinishingOptionDto[]> {
+    return this.db
+      .select()
+      .from(finishingOptions)
+      .where(activeOnly ? eq(finishingOptions.isActive, true) : undefined)
+      .orderBy(asc(finishingOptions.sortOrder), asc(finishingOptions.name));
+  }
+
+  async createFinishingOption(
+    dto: CreateFinishingOptionDto,
+  ): Promise<FinishingOptionDto> {
+    const [row] = await withConflictMapping(
+      this.db.insert(finishingOptions).values(dto).returning(),
+      { unique: 'Finishing option code already exists' },
+    );
+    return row;
+  }
+
+  async updateFinishingOption(
+    id: string,
+    dto: UpdateFinishingOptionDto,
+  ): Promise<FinishingOptionDto> {
+    const [row] = await withConflictMapping(
+      this.db
+        .update(finishingOptions)
+        .set(dto)
+        .where(eq(finishingOptions.id, id))
+        .returning(),
+      { unique: 'Finishing option code already exists' },
+    );
+    return found(row, 'Finishing option not found');
+  }
+
+  async deleteFinishingOption(id: string): Promise<void> {
+    const [row] = await withConflictMapping(
+      this.db
+        .delete(finishingOptions)
+        .where(eq(finishingOptions.id, id))
+        .returning(),
+      {
+        inUse:
+          'Finishing option is used by product options; deactivate it instead',
+      },
+    );
+    found(row, 'Finishing option not found');
   }
 
   listTags(): Promise<TagDto[]> {

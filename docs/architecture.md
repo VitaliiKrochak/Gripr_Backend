@@ -19,7 +19,8 @@ src/
     orders/                # checkout, order lifecycle, admin order management
     payments/              # LiqPay checkout and callback, manual payments
     production/            # production stages and per-item production steps
-    custom.requests/       # custom piece requests, quotes, custom orders
+    custom.requests/       # custom requests, customizations, proposals
+    messages/              # customer-workshop conversations per order/request
     delivery/              # Nova Poshta city and branch lookup
     dashboard/             # admin summary
     designs/               # open-license Sketchfab import and review queue
@@ -32,6 +33,7 @@ src/
     origins/
     pagination/
     phone/
+    specification/         # jewelry specification DTO (requests, proposals, orders)
     types/
   integrations/            # external systems
     cloudinary/
@@ -173,7 +175,11 @@ Drizzle instance under the `DATABASE` token.
 - The schema is defined in `src/integrations/database/schema/*.schema.ts`.
   `npm run db:generate` writes SQL migrations to `drizzle/`, and
   `npm run db:migrate` applies them. `npm run db:seed` inserts reference data
-  (metals, gemstones, production stages) idempotently.
+  (metals, gemstones, finishing options, production stages) idempotently.
+- Migrations must keep production data working: add columns with defaults or
+  as nullable, backfill them in the same migration, and drop old columns in a
+  later migration once the data is copied (for example `ring_size` →
+  `size_value`).
 - Order items store an immutable snapshot of the product name, selected
   options, prices, and production time, so catalog edits never change existing
   orders.
@@ -182,13 +188,18 @@ Drizzle instance under the `DATABASE` token.
 
 Money is stored and transferred as integer kopiykas everywhere. Prices,
 discounts, and production time are always computed by the server from the
-selected option values; amounts sent by clients are never trusted.
+product (manufacturing price, metal weight and price per gram, stones) and
+the selected option values; amounts sent by clients are never trusted. The
+product's "price from" is denormalized into `products.price_from` so listings
+can filter and sort by it; every write that affects pricing recomputes it in
+the same transaction.
 
 ## Integrations
 
 - **Cloudinary** stores images. The API signs direct browser uploads for a
   fixed folder (`jewelry/products`, `jewelry/collections`,
-  `jewelry/production`, `jewelry/custom-requests/<userId>`) and validates that
+  `jewelry/production`, `jewelry/messages`,
+  `jewelry/custom-requests/<userId>`) and validates that
   submitted image references belong to that folder and cloud.
 - **LiqPay** accepts payments. See [Payments](#payments).
 - **Nova Poshta** provides city and branch lookup for checkout. Orders store
@@ -211,8 +222,8 @@ and is disabled with `DESIGN_IMPORT_ENABLED=false`.
 Orders are paid through LiqPay Checkout:
 
 1. The customer asks the API to start a payment for an order. The API decides
-   what is due (the full amount, the custom-order deposit, or the remaining
-   balance), creates a pending `payments` row, and returns signed `data` and
+   what is due (the full amount, the custom-order deposit, a staged
+   prepayment, or the remaining balance), creates a pending `payments` row, and returns signed `data` and
    `signature` for the LiqPay checkout form. The LiqPay `order_id` is the
    payment id.
 2. The browser posts the form to LiqPay; after paying, LiqPay returns the
@@ -223,7 +234,8 @@ Orders are paid through LiqPay Checkout:
    idempotent. A success whose amount or currency does not match the payment
    is recorded as a failure.
 4. A successful payment increases the order's `paidAmount` and moves a
-   `pending_payment` order to `paid`.
+   `pending_payment` order to `paid` (staged custom orders move past the
+   payment stage it covers).
 
 Fiscal receipts are issued by LiqPay's software cash register (ПРРО): when
 `LIQPAY_RRO_GOOD_ID` is configured, the checkout data carries the receipt
@@ -237,18 +249,26 @@ Order status transitions are defined in one place,
 `src/modules/orders/order.status.ts`:
 
 ```text
-pending_payment -> paid | cancelled
-paid            -> in_production | ready | cancelled | refunded
-in_production   -> ready | cancelled
-ready           -> shipped | cancelled
-shipped         -> delivered
-delivered       -> completed | refunded
-cancelled       -> refunded
+pending_payment             -> paid | cancelled
+awaiting_model_payment      -> modeling | cancelled
+modeling                    -> model_review | cancelled
+model_review                -> modeling | awaiting_production_payment | cancelled
+awaiting_production_payment -> in_production | cancelled
+paid                        -> in_production | ready | cancelled | refunded
+in_production               -> awaiting_final_payment | ready | cancelled
+awaiting_final_payment      -> ready | cancelled
+ready                       -> shipped | cancelled
+shipped                     -> delivered
+delivered                   -> completed | refunded
+cancelled                   -> refunded
 ```
 
 Production progress is tracked per order item with production steps created
-from the stage dictionary. Custom pieces start as custom requests; accepting an
-admin quote creates a `custom` order with an optional deposit.
+from the stage dictionary. Custom pieces start as custom requests (or
+customizations of catalog products); the workshop sends versioned proposals,
+and approving one creates a `custom` order paid in stages: 3D model, then
+production prepayment, then the remainder. The customer's original request
+and every proposal version are kept unchanged.
 
 ## Swagger
 

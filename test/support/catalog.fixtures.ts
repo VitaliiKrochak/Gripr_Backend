@@ -107,12 +107,12 @@ export async function createCatalog(server: App): Promise<CatalogFixture> {
   ).optionGroups.find((group) => group.kind === 'size')!;
   await post(`/api/products/${ring.id}/option-groups/${sizeGroup.id}/values`, {
     label: '16',
-    ringSize: 16,
+    sizeValue: 16,
     isDefault: true,
   });
   await post(`/api/products/${ring.id}/option-groups/${sizeGroup.id}/values`, {
     label: '17.5',
-    ringSize: 17.5,
+    sizeValue: 17.5,
     priceDelta: 20_000,
   });
 

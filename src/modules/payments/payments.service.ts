@@ -25,6 +25,8 @@ import { nextPaymentStatus } from './payment.status';
 const PAYMENT_LABELS = {
   full: 'Оплата',
   deposit: 'Передоплата',
+  model_prepayment: 'Передоплата 3D-моделі',
+  production_prepayment: 'Передоплата виготовлення',
   remainder: 'Доплата',
 } as const;
 

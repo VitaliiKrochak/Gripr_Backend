@@ -26,7 +26,12 @@ import { PaginationQueryDto } from '../../shared/pagination/pagination.query.dto
 import { ImageDto } from '../catalog/dto/collection.dto';
 import { ProductCardDto } from '../catalog/dto/product.card.dto';
 import { ProductSpecificationDto } from '../catalog/dto/product.dto';
-import { GemstoneDto, MetalDto, TagDto } from '../catalog/dto/reference.dto';
+import {
+  FinishingOptionDto,
+  GemstoneDto,
+  MetalDto,
+  TagDto,
+} from '../catalog/dto/reference.dto';
 import { DesignCreditDto } from '../designs/dto/design.credit.dto';
 
 export const PRODUCT_SORTS = [
@@ -149,9 +154,24 @@ export class SelectedOptionDto {
   priceDelta: number;
 }
 
+/** Parts of the unit price, in kopiykas. */
+export class PriceBreakdownDto {
+  /** Manufacturing work. */
+  manufacturing: number;
+  /** Metal by weight at the current price per gram. */
+  metal: number;
+  /** Fixed stones of the piece. */
+  stones: number;
+  /** Surcharges of the selected options. */
+  options: number;
+  /** Approximate metal weight of this configuration. */
+  weightGrams: number | null;
+}
+
 export class QuoteDto {
   /** Price of one piece in this configuration, in kopiykas. */
   unitPrice: number;
+  breakdown: PriceBreakdownDto;
   productionDaysMin: number;
   productionDaysMax: number;
   /** Effective selection including defaults. */
@@ -165,12 +185,37 @@ export class StorefrontOptionValueDto {
   label: string;
   metal: MetalDto | null;
   gemstone: GemstoneDto | null;
+  finishing: FinishingOptionDto | null;
   stoneCarat: number | null;
   stoneSizeMm: number | null;
-  ringSize: number | null;
+  /** Ring size or length in cm, depending on the product type. */
+  sizeValue: number | null;
   priceDelta: number;
   productionDaysDelta: number;
   isDefault: boolean;
+}
+
+export class CharacteristicStoneDto {
+  name: string;
+  variation: string | null;
+  sizeMm: number | null;
+  carat: number | null;
+  quantity: number;
+}
+
+/** Characteristics generated from structured product data. */
+export class ProductCharacteristicsDto {
+  /** Metals the piece is offered in, with purity and colour. */
+  metals: MetalDto[];
+  /** Approximate metal weight of the default configuration. */
+  weightGrams: number | null;
+  widthMm: number | null;
+  heightMm: number | null;
+  stones: CharacteristicStoneDto[];
+  /** Total number of fixed stones. */
+  stoneCount: number;
+  /** Coatings available for the piece. */
+  coatings: string[];
 }
 
 export class StorefrontOptionGroupDto {
@@ -205,14 +250,19 @@ export class StorefrontProductDto {
   type: ProductType;
   shortDescription: string | null;
   description: string | null;
+  /** Additional characteristics entered manually. */
   specifications: ProductSpecificationDto[];
+  characteristics: ProductCharacteristicsDto;
   @ApiProperty({ enum: PRODUCT_AVAILABILITIES })
   availability: ProductAvailability;
   inStock: boolean;
   isHot: boolean;
   isNew: boolean;
   isFeatured: boolean;
+  /** Manufacturing price. */
   basePrice: number;
+  /** Price of the default configuration. */
+  priceFrom: number;
   productionDaysMin: number;
   productionDaysMax: number;
   seoTitle: string | null;
@@ -272,4 +322,12 @@ export class StorefrontFiltersDto {
   gemstones: GemstoneDto[];
   collections: StorefrontCollectionSummaryDto[];
   priceRange: PriceRangeDto;
+}
+
+/** Active reference data for the custom request form. */
+export class StorefrontReferenceDto {
+  metals: MetalDto[];
+  gemstones: GemstoneDto[];
+  /** Engraving, coating, and processing operations. */
+  finishingOptions: FinishingOptionDto[];
 }

@@ -10,12 +10,18 @@ import {
 } from 'drizzle-orm/pg-core';
 import { products } from './catalog.schema';
 import { appSchema, timestamps } from './common.schema';
+import type { JewelrySpecification } from './common.schema';
 import { customers } from './customers.schema';
 
 export const ORDER_STATUSES = [
   'pending_payment',
   'paid',
+  'awaiting_model_payment',
+  'modeling',
+  'model_review',
+  'awaiting_production_payment',
   'in_production',
+  'awaiting_final_payment',
   'ready',
   'shipped',
   'delivered',
@@ -31,6 +37,8 @@ export type OrderKind = (typeof ORDER_KINDS)[number];
 export const PAYMENT_TYPES = [
   'full',
   'deposit',
+  'model_prepayment',
+  'production_prepayment',
   'remainder',
   'manual',
 ] as const;
@@ -119,7 +127,12 @@ export const orders = appSchema.table(
     subtotal: integer('subtotal').notNull(),
     discount: integer('discount').notNull().default(0),
     total: integer('total').notNull(),
+    /** Legacy custom orders: first payment before production. */
     depositAmount: integer('deposit_amount'),
+    /** Staged custom orders: 3D model prepayment, paid first. */
+    modelPaymentAmount: integer('model_payment_amount'),
+    /** Staged custom orders: prepayment due before manufacturing. */
+    productionPaymentAmount: integer('production_payment_amount'),
     paidAmount: integer('paid_amount').notNull().default(0),
     productionDaysMin: integer('production_days_min').notNull().default(0),
     productionDaysMax: integer('production_days_max').notNull().default(0),
@@ -155,6 +168,8 @@ export const orderItems = appSchema.table(
       .notNull()
       .default([]),
     engravingText: text('engraving_text'),
+    /** Approved proposal specification of a custom piece. */
+    specification: jsonb('specification').$type<JewelrySpecification>(),
     /** Taken from ready stock; returned to stock if the order is cancelled. */
     fromStock: boolean('from_stock').notNull().default(false),
     quantity: integer('quantity').notNull(),

@@ -15,6 +15,7 @@ import type {
 import {
   productImages,
   products,
+  productStones,
   productTags,
 } from '../../integrations/database/database.schema';
 import { qualified } from '../../integrations/database/database.sql';
@@ -29,8 +30,12 @@ import type {
   CreateProductDto,
   UpdateProductDto,
 } from './dto/product.dto';
+import { refreshPriceFrom } from './product.pricing';
+import { saveProductStructure, touchProduct } from './product.structure';
 
 const SLUG_CONFLICT = 'Product slug already exists';
+const MISSING_REFERENCE =
+  'Collection, tag, metal, gemstone, or operation does not exist';
 
 @Injectable()
 export class ProductsService {
@@ -61,6 +66,7 @@ export class ProductsService {
           type: products.type,
           status: products.status,
           basePrice: products.basePrice,
+          priceFrom: products.priceFrom,
           availability: products.availability,
           stockQuantity: products.stockQuantity,
           isHot: products.isHot,
@@ -95,7 +101,7 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto): Promise<AdminProductDto> {
-    const { tagIds, ...values } = dto;
+    const { tagIds, stones, optionGroups, images, ...values } = dto;
     assertProductionDays(values.productionDaysMin, values.productionDaysMax);
 
     const id = await withConflictMapping(
@@ -105,9 +111,15 @@ export class ProductsService {
           .values({ ...values, ...publicationFields(values.status) })
           .returning({ id: products.id });
         await replaceTags(tx, product.id, tagIds);
+        await saveProductStructure(tx, product.id, values.type, {
+          stones,
+          optionGroups,
+          images,
+        });
+        await refreshPriceFrom(tx, eq(products.id, product.id));
         return product.id;
       }),
-      { unique: SLUG_CONFLICT, inUse: 'Collection or tag does not exist' },
+      { unique: SLUG_CONFLICT, inUse: MISSING_REFERENCE },
     );
 
     return this.get(id);
@@ -115,21 +127,11 @@ export class ProductsService {
 
   async update(id: string, dto: UpdateProductDto): Promise<AdminProductDto> {
     const current = await this.get(id);
-    const { tagIds, ...values } = dto;
+    const { tagIds, stones, optionGroups, images, ...values } = dto;
     assertProductionDays(
       values.productionDaysMin ?? current.productionDaysMin,
       values.productionDaysMax ?? current.productionDaysMax,
     );
-
-    if (
-      current.designCredit &&
-      (values.status ?? current.status) === 'published' &&
-      (values.basePrice ?? current.basePrice) <= 0
-    ) {
-      throw new ConflictException(
-        'Set a price before publishing a product made from an open design',
-      );
-    }
 
     await withConflictMapping(
       this.db.transaction(async (tx) => {
@@ -141,13 +143,26 @@ export class ProductsService {
               ...publicationFields(values.status, current.publishedAt),
             })
             .where(eq(products.id, id));
+        } else if (stones || optionGroups || images) {
+          await touchProduct(tx, id);
         }
 
         if (tagIds) {
           await replaceTags(tx, id, tagIds);
         }
+
+        await saveProductStructure(tx, id, values.type ?? current.type, {
+          stones,
+          optionGroups,
+          images,
+        });
+        await refreshPriceFrom(tx, eq(products.id, id));
+
+        if (current.designCredit) {
+          await assertPricedForPublishing(tx, id);
+        }
       }),
-      { unique: SLUG_CONFLICT, inUse: 'Collection or tag does not exist' },
+      { unique: SLUG_CONFLICT, inUse: MISSING_REFERENCE },
     );
 
     return this.get(id);
@@ -173,6 +188,22 @@ function assertProductionDays(min = 0, max = 0): void {
   }
 }
 
+async function assertPricedForPublishing(
+  executor: DatabaseExecutor,
+  productId: string,
+): Promise<void> {
+  const [row] = await executor
+    .select({ status: products.status, priceFrom: products.priceFrom })
+    .from(products)
+    .where(eq(products.id, productId));
+
+  if (row?.status === 'published' && row.priceFrom <= 0) {
+    throw new ConflictException(
+      'Set a price before publishing a product made from an open design',
+    );
+  }
+}
+
 async function replaceTags(
   executor: DatabaseExecutor,
   productId: string,
@@ -193,8 +224,8 @@ async function replaceTags(
   }
 }
 
-/** Loads a product with collection, tags, images, and ordered options. */
-export async function loadProductDetails(db: Database, where: SQL) {
+/** Loads a product with collection, tags, images, stones, and ordered options. */
+export async function loadProductDetails(db: DatabaseExecutor, where: SQL) {
   const product = await db.query.products.findFirst({
     where,
     with: {
@@ -209,13 +240,17 @@ export async function loadProductDetails(db: Database, where: SQL) {
         },
       },
       images: { orderBy: [asc(productImages.sortOrder)] },
+      stones: {
+        orderBy: [asc(productStones.sortOrder)],
+        with: { gemstone: true },
+      },
       productTags: { with: { tag: true } },
       optionGroups: {
         orderBy: (groups) => [asc(groups.sortOrder), asc(groups.createdAt)],
         with: {
           values: {
             orderBy: (values) => [asc(values.sortOrder), asc(values.createdAt)],
-            with: { metal: true, gemstone: true },
+            with: { metal: true, gemstone: true, finishing: true },
           },
         },
       },

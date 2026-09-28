@@ -12,17 +12,20 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import type { User } from '@supabase/supabase-js';
+import { CurrentUser } from '../../../shared/decorators/current.user.decorator';
 import { AdminGuard } from '../../../shared/guards/admin.guard';
 import {
   AdminCustomRequestDto,
   AdminCustomRequestListQueryDto,
   AdminCustomRequestPageDto,
-  QuoteCustomRequestDto,
+  CreateProposalDto,
   UpdateCustomRequestDto,
 } from '../custom.request.dto';
 import { CustomRequestsService } from '../custom.requests.service';
@@ -62,14 +65,19 @@ export class AdminCustomRequestsController {
     return this.customRequests.update(id, dto);
   }
 
-  @Post(':id/quote')
+  @Post(':id/proposals')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send (or replace) the price and timing quote' })
+  @ApiOperation({
+    summary:
+      'Send a new proposal version: final specification, 3D model and product prices, prepayment, and timing',
+  })
   @ApiOkResponse({ type: AdminCustomRequestDto })
-  quote(
+  @ApiConflictResponse({ description: 'The request is closed' })
+  createProposal(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: QuoteCustomRequestDto,
+    @Body() dto: CreateProposalDto,
+    @CurrentUser() admin: User,
   ): Promise<AdminCustomRequestDto> {
-    return this.customRequests.quote(id, dto);
+    return this.customRequests.createProposal(id, dto, admin.id);
   }
 }

@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiOkResponse,
@@ -20,7 +21,11 @@ import type { User } from '@supabase/supabase-js';
 import { CurrentUser } from '../../../shared/decorators/current.user.decorator';
 import { PaginationQueryDto } from '../../../shared/pagination/pagination.query.dto';
 import { CheckoutDto } from '../dto/checkout.dto';
-import { OrderDto, OrderSummaryPageDto } from '../dto/order.dto';
+import {
+  ModelChangesDto,
+  OrderDto,
+  OrderSummaryPageDto,
+} from '../dto/order.dto';
 import { OrdersService } from '../orders.service';
 
 @ApiTags('Orders')
@@ -63,9 +68,41 @@ export class PrivateOrdersController {
     return this.ordersService.getForCustomer(user, id);
   }
 
+  @Post(':id/model/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Approve the 3D model; the production prepayment becomes due',
+  })
+  @ApiOkResponse({ type: OrderDto })
+  @ApiConflictResponse({ description: 'The model is not waiting for review' })
+  approveModel(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OrderDto> {
+    return this.ordersService.approveModel(user, id);
+  }
+
+  @Post(':id/model/request-changes')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Ask for 3D model changes; the order returns to modeling',
+  })
+  @ApiOkResponse({ type: OrderDto })
+  @ApiConflictResponse({ description: 'The model is not waiting for review' })
+  requestModelChanges(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ModelChangesDto,
+  ): Promise<OrderDto> {
+    return this.ordersService.requestModelChanges(user, id, dto.comment);
+  }
+
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel an order that is not paid yet' })
+  @ApiOperation({
+    summary:
+      'Cancel an order that is not paid yet or awaits the model prepayment',
+  })
   @ApiOkResponse({ type: OrderDto })
   cancel(
     @CurrentUser() user: User,

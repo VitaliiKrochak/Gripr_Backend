@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiOkResponse,
@@ -24,6 +25,7 @@ import {
   CreateCustomRequestDto,
   CustomRequestDto,
   CustomRequestPageDto,
+  RequestProposalChangesDto,
 } from '../custom.request.dto';
 import { CustomRequestsService } from '../custom.requests.service';
 
@@ -66,7 +68,8 @@ export class PrivateCustomRequestsController {
   @Post(':id/accept')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Accept the quote; creates an order that awaits payment',
+    summary:
+      'Approve the latest proposal; creates an order awaiting the 3D model or production prepayment',
   })
   @ApiOkResponse({ type: CustomRequestDto })
   accept(
@@ -77,9 +80,24 @@ export class PrivateCustomRequestsController {
     return this.customRequests.accept(user, id, dto);
   }
 
+  @Post(':id/request-changes')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Ask the workshop to revise the latest proposal',
+  })
+  @ApiOkResponse({ type: CustomRequestDto })
+  @ApiConflictResponse({ description: 'No proposal is waiting for approval' })
+  requestChanges(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestProposalChangesDto,
+  ): Promise<CustomRequestDto> {
+    return this.customRequests.requestChanges(user, id, dto);
+  }
+
   @Post(':id/decline')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Withdraw the request or decline the quote' })
+  @ApiOperation({ summary: 'Withdraw the request or decline the proposal' })
   @ApiOkResponse({ type: CustomRequestDto })
   decline(
     @CurrentUser() user: User,

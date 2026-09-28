@@ -69,12 +69,23 @@
 
 - Store and transfer money as integer kopiykas. Never accept prices from
   clients; recompute them on the server from option value ids.
+- After any write that changes product pricing (product fields, stones,
+  options, or a metal price per gram), call `refreshPriceFrom` in the same
+  transaction so `products.price_from` stays correct.
+- Store descriptive snapshots (option labels, specification names) next to
+  reference ids, so later reference-data edits never rewrite orders,
+  requests, or proposals.
+- Editors that save nested lists send the whole list; the service upserts rows
+  by id, deletes missing rows, and uses array order as the sort order. Do not
+  add per-row save endpoints for new editors.
 - Paginate list endpoints with `PaginationQueryDto` (`page`, `pageSize` up to
   100) and return `{ items, total, page, pageSize }` via `toPage`.
 - Define tables in `src/integrations/database/schema/<area>.schema.ts` inside
   the `app` Postgres schema (`appSchema`) and export them from
   `database.schema.ts`. After changing the schema, run `npm run db:generate`
-  and commit the generated migration.
+  and commit the generated migration. Backfill new columns in the same
+  migration and split renames into add-and-copy, then drop, so existing data
+  survives and drizzle-kit never needs an interactive rename.
 - Inject the database with `@Inject(DATABASE)`. Inside a transaction, pass the
   transaction executor (`tx`) to every helper that reads or writes; helpers
   that can run in a transaction accept an optional `DatabaseExecutor`

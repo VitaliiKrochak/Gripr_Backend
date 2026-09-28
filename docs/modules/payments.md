@@ -6,9 +6,10 @@ LiqPay payments and manually recorded payments.
 
 - `POST /api/customers/me/orders/:orderId/payments` (private, `201`): starts a
   LiqPay payment for the amount currently due and returns `paymentId`, `type`
-  (`full`, `deposit`, or `remainder`), `amount`, `checkoutUrl`, `data`, and
-  `signature`. Answers `409` when nothing is due (paid, cancelled, or
-  refunded orders).
+  (`full`, `deposit`, `model_prepayment`, `production_prepayment`, or
+  `remainder`), `amount`, `checkoutUrl`, `data`, and `signature`. Answers
+  `409` when nothing is due (paid, cancelled, or refunded orders, or a staged
+  custom order between payment stages).
 - `POST /api/payments/liqpay/callback` (public): LiqPay server callback,
   `application/x-www-form-urlencoded` with `data` and `signature`.
 - `POST /api/orders/:orderId/payments` (admin, `201`) with
@@ -20,6 +21,9 @@ LiqPay payments and manually recorded payments.
 - Nothing has been paid: the deposit when the order has one smaller than the
   total, otherwise the full amount.
 - Something has been paid: the remaining balance.
+- Staged custom orders: the 3D model prepayment, then the production
+  prepayment, then the remainder, following the order status (see
+  [orders](orders.md#staged-custom-orders)).
 
 ## Callback processing
 
@@ -34,7 +38,8 @@ LiqPay payments and manually recorded payments.
 - A failed payment can still succeed if the customer retries on the same
   LiqPay page.
 - A successful payment adds to `paidAmount` and moves a `pending_payment` order
-  to `paid`.
+  to `paid`; for staged custom orders it moves the order past the payment
+  stage it covers.
 
 ## Fiscal receipts
 
@@ -45,8 +50,8 @@ successful payment and sends it to the tax service:
 - When `LIQPAY_RRO_GOOD_ID` is set, every checkout includes `rro_info`. A full
   payment lists the order items (quantity and unit price; a discounted line
   whose total does not divide evenly is split into two lines so unit prices
-  stay whole kopiykas). Deposits and remainders are one line for the paid
-  amount. All lines use the configured LiqPay good.
+  stay whole kopiykas). Deposits, prepayments, and remainders are one line
+  for the paid amount. All lines use the configured LiqPay good.
 - The receipt is emailed to the order's `contactEmail` when there is one. The
   merchant can also copy the receipt link from the payment in the LiqPay
   dashboard.

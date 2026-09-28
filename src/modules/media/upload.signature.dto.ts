@@ -5,6 +5,7 @@ export const ADMIN_UPLOAD_FOLDERS = [
   'products',
   'collections',
   'production',
+  'messages',
 ] as const;
 export type AdminUploadFolder = (typeof ADMIN_UPLOAD_FOLDERS)[number];
 

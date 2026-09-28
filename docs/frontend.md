@@ -68,21 +68,27 @@ The product response contains `optionGroups` with only available values, and
 `defaultQuote` for the default selection.
 
 1. Render each group by `kind`: `metal` as swatches (value `metal.color`),
-   `stone` with `gemstone`, `stoneCarat`, and `stoneSizeMm`, `size` as a ring
-   size picker (`ringSize`), `engraving` as a text field (up to 40
-   characters), `custom` as a select. Preselect `isDefault` values. Show
-   `priceDelta` as "+N ₴" next to a value when it is not zero.
+   `stone` with `gemstone`, `stoneCarat`, and `stoneSizeMm`, `size` as a size
+   picker (`sizeValue`: ring size for rings, length in cm for chains,
+   necklaces, and bracelets), `engraving` as a text field (up to 40
+   characters), `coating` and `processing` with `finishing`, `custom` as a
+   select. Preselect `isDefault` values. Show `priceDelta` as "+N ₴" next to
+   a value when it is not zero.
 2. On every change, call
    `POST /storefront/products/:slug/quote` with
    `{ "optionValueIds": [...], "engravingText": "..." }` (debounce around
-   250 ms and ignore out-of-date responses). Show `unitPrice` and
-   "виготовлення productionDaysMin–productionDaysMax днів". A `400` means the
-   selection is invalid; show the message.
-3. Switch the gallery to images whose `optionValueId` is selected, falling back
+   250 ms and ignore out-of-date responses). Show `unitPrice`, optionally the
+   `breakdown`, and "виготовлення productionDaysMin–productionDaysMax днів".
+   A `400` means the selection is invalid; show the message.
+3. Show `characteristics` (metals, weight, dimensions, stones, coatings) as
+   the product's characteristics; `specifications` are extra manual rows.
+4. Switch the gallery to images whose `optionValueId` is selected, falling back
    to images without `optionValueId`.
-4. For `inStock` products, show "в наявності" instead of the production time
+5. For `inStock` products, show "в наявності" instead of the production time
    label if it fits your design.
-5. Offer a size guide that links to the profile ring size
+6. Offer "Request customization": a custom request with `productId` and the
+   selected `optionValueIds` (see [Custom request](#custom-request)).
+7. Offer a size guide that links to the profile ring size
    (`GET /customers/me`, `ringSize`) to preselect the matching size value.
 
 When `designCredit` is not `null`, the product page must show a public license
@@ -101,8 +107,8 @@ button that calls `POST /customers/me/cart/sets/:collectionSlug`.
 | Favorites | `GET /customers/me/favorites`, `PUT` or `DELETE /customers/me/favorites/:productId` |
 | Cart | `GET /customers/me/cart`, `POST /customers/me/cart/items`, `PATCH` or `DELETE /customers/me/cart/items/:itemId`, `DELETE /customers/me/cart` |
 | Profile | `GET` and `PATCH /customers/me` |
-| Orders | `GET /customers/me/orders`, `GET /customers/me/orders/:id`, `POST /customers/me/orders/:id/cancel` |
-| Custom request | `POST /customers/me/uploads/signature`, `POST /customers/me/custom-requests`, `GET /customers/me/custom-requests[/:id]`, `POST .../:id/accept`, `POST .../:id/decline` |
+| Orders | `GET /customers/me/orders`, `GET /customers/me/orders/:id`, `POST /customers/me/orders/:id/cancel`, `POST .../:id/model/approve`, `POST .../:id/model/request-changes`, `GET` and `POST .../:id/messages` |
+| Custom request | `GET /storefront/reference`, `POST /customers/me/uploads/signature`, `POST /customers/me/custom-requests`, `GET /customers/me/custom-requests[/:id]`, `POST .../:id/accept`, `POST .../:id/request-changes`, `POST .../:id/decline`, `GET` and `POST .../:id/messages` |
 
 Guests can browse and configure without signing in. Ask them to sign in when
 they add to the cart or favorites, and replay the action afterwards.
@@ -147,36 +153,48 @@ and in the totals. The production estimate for the whole order is
    a minute) until `paidAmount` grows or `status` changes; the payment is
    confirmed by LiqPay's server callback, not by the redirect.
 4. Show the "pay" button on the order page whenever `nextPayment` is not
-   `null`. For custom orders the first payment is the deposit
-   (`type: "deposit"`) and a later one is the remainder.
+   `null`. Legacy custom orders pay a deposit (`type: "deposit"`) and then the
+   remainder; staged custom orders pay `model_prepayment`,
+   `production_prepayment`, and `remainder` as their status reaches each
+   stage (see [orders](modules/orders.md#staged-custom-orders)).
 
 ### Order page and production timeline
 
 Show:
 
-- the status (`pending_payment`, `paid`, `in_production`, `ready`,
-  `shipped`, `delivered`, `completed`, `cancelled`, `refunded`) with the
-  `history` notes;
+- the status (`pending_payment`, `awaiting_model_payment`, `modeling`,
+  `model_review`, `awaiting_production_payment`, `paid`, `in_production`,
+  `awaiting_final_payment`, `ready`, `shipped`, `delivered`, `completed`,
+  `cancelled`, `refunded`) with the `history` notes, and for staged custom
+  orders the payment stages with their amounts;
+- in `model_review`, "approve the model" and "request changes" actions;
+- the conversation (`messages`) with attachments;
 - for every item, `productionSteps` as a timeline: `stage.name`,
   `stage.description`, `state` (`pending`, `in_progress`, `done`,
   `skipped`), dates, the note, and photos;
 - the Nova Poshta `trackingNumber` once shipped, linked to
   `https://novaposhta.ua/tracking/?cargo_number={trackingNumber}`;
 - payments and `nextPayment`;
-- a cancel button only while the status is `pending_payment`.
+- a cancel button only while the status is `pending_payment` or
+  `awaiting_model_payment`.
 
 ### Custom request
 
 1. Upload reference images: `POST /customers/me/uploads/signature`, then POST
    each file to Cloudinary (see [Image uploads](#image-uploads)).
-2. Submit `POST /customers/me/custom-requests` with `productType`,
-   `description`, `referenceImages`, and optional `budgetMin`, `budgetMax`
-   (kopiykas), `desiredMetal`, and `ringSize`.
-3. The request list shows the status. When it is `quoted`, show `quote`
-   (title, price, deposit, production days, note) with "accept" and
-   "decline" actions.
+2. Load choices from `GET /storefront/reference` and submit
+   `POST /customers/me/custom-requests` with `productType`, `description`,
+   `referenceImages`, optional `budgetMin`, `budgetMax` (kopiykas), and a
+   `specification` (metal or recommendation, stone groups, "no stones" or
+   recommendation, size by type, engraving, coating, timeline, comments,
+   requirements; see [custom requests](modules/custom.requests.md)). For
+   "Request customization" also send `productId` and `optionValueIds`.
+3. The request page shows the original request separately from the latest
+   `proposal` (specification, 3D model price, product price, production
+   prepayment, production days, note) with "accept", "request changes", and
+   "decline" actions; earlier `proposals` are history.
 4. Accepting asks for contact and delivery like checkout and calls
-   `POST /customers/me/custom-requests/:id/accept`; then start the deposit
+   `POST /customers/me/custom-requests/:id/accept`; then start the first
    payment for the returned `orderId`.
 
 ## Image uploads
@@ -207,16 +225,18 @@ All admin routes require `app_metadata.role = "admin"`.
 | Screen | Calls |
 | --- | --- |
 | Dashboard | `GET /dashboard/summary` |
-| Metals, gemstones, tags | `GET`, `POST /metals`, `PATCH`, `DELETE /metals/:id` (same for `/gemstones`, `/tags`) |
-| Collections | `GET /collections?status=`, `GET`, `POST`, `PATCH`, `DELETE /collections[/:id]`; cover and gallery via `POST /media/upload-signature` with `folder: "collections"` |
+| Metals, gemstones, finishing options, tags | `GET`, `POST /metals`, `PATCH`, `DELETE /metals/:id` (same for `/gemstones`, `/finishing-options`, `/tags`) |
+| Collections | `GET /collections?status=`, `GET`, `POST`, `PATCH`, `DELETE /collections[/:id]` (with ordered `productIds`); cover and gallery via `POST /media/upload-signature` with `folder: "collections"` |
 | Products list | `GET /products?status=&collectionId=&type=&q=` |
-| Product editor | `GET`, `POST`, `PATCH`, `DELETE /products[/:id]` |
+| Product editor | `GET`, `POST`, `PATCH`, `DELETE /products[/:id]` with `stones`, `optionGroups`, and `images` in one save |
+| Product preview | `GET /products/:id/preview`, `POST /products/:id/preview/quote` (drafts included) |
 | Product images | `POST /products/:id/images`, `PATCH` or `DELETE /products/:id/images/:imageId`, `PUT /products/:id/images/order`; upload with `folder: "products"` |
 | Product options | `POST /products/:id/option-groups`, `PATCH` or `DELETE .../option-groups/:groupId`, `POST .../option-groups/:groupId/values`, `PATCH` or `DELETE .../values/:valueId` |
 | Orders | `GET /orders?status=&kind=&createdFrom=&createdTo=&q=`, `GET /orders/:id` |
 | Order actions | `PATCH /orders/:id/status`, `PATCH /orders/:id/delivery` (TTN), `PATCH /orders/:id` (internal note), `POST /orders/:id/payments` (manual payment) |
-| Production | `GET`, `POST`, `PATCH`, `DELETE /production-stages[/:id]`; `POST /orders/:orderId/items/:itemId/production-steps`, `PATCH` or `DELETE /production-steps/:id`; photos with `folder: "production"` |
-| Custom requests | `GET /custom-requests?status=`, `GET /custom-requests/:id`, `PATCH /custom-requests/:id`, `POST /custom-requests/:id/quote` |
+| Production | `GET`, `POST`, `PATCH`, `DELETE /production-stages[/:id]`; `POST /orders/:orderId/items/:itemId/production-steps`, `PUT .../production-steps/order`, `PATCH` or `DELETE /production-steps/:id`; photos with `folder: "production"` |
+| Custom requests | `GET /custom-requests?status=&source=`, `GET /custom-requests/:id`, `PATCH /custom-requests/:id`, `POST /custom-requests/:id/proposals` |
+| Messages | `GET` and `POST /orders/:id/messages`, `GET` and `POST /custom-requests/:id/messages`; attachments with `folder: "messages"` |
 | Customers | `GET /customers?q=`, `GET /customers/:id` |
 | Open designs | `GET /design-candidates?status=&type=&license=&ipRisk=&q=&sort=`, `GET /design-candidates/:id`, `POST /design-candidates/:id/approve`, `POST .../:id/reject`, `POST .../:id/restore`, `POST /design-candidates/import`, `GET /design-candidates/import/status` |
 
@@ -225,12 +245,14 @@ Admin workflow notes:
 - **Publishing:** create the product as `draft`, add images and options,
   preview it, then set `status: "published"`. Archive instead of deleting.
 - **Open designs:** approving a candidate returns a draft product; open its
-  editor to set the price (publishing with `basePrice` 0 answers `409`). Show
+  editor to set the price (publishing with a zero price answers `409`). Show
   the product's `designCredit` read-only in the editor.
-- **Configurator setup:** create one group per choice (for example "Метал",
-  "Камінь", "Розмір", "Гравіювання"), add values with `priceDelta` and
-  `productionDaysDelta`, and mark one default per required group. Link images
-  to metal values with `optionValueId`.
+- **Configurator setup:** one editor with a single "Save product" button:
+  manufacturing price, weight, stone groups, then one group per choice
+  (metal, size, engraving, coating, processing, custom) with values ordered by
+  drag and drop and one default per required group. Names and labels may be
+  left empty to use generated ones. Link images to values with
+  `optionValueId`.
 - **Order status:** offer only the statuses in `allowedTransitions`. Before
   `shipped`, set the TTN; the order must be fully paid.
 - **Production:** when an order is paid, apply the default template to each
@@ -239,6 +261,9 @@ Admin workflow notes:
   work progresses, attach photos, and hide internal steps with
   `visibleToCustomer: false`. Move the order to `in_production` and later
   `ready`.
-- **Custom requests:** set `in_review`, then send a quote with price,
-  optional deposit, and production days. The customer accepts it and pays the
-  deposit.
+- **Custom requests:** set `in_review`, then send a proposal with the final
+  specification (prefilled from the request), 3D model price (or no model),
+  product price, production prepayment, production days, and a note. The
+  customer approves it or requests changes; send a new version for changes.
+  After approval, move the order from `modeling` to `model_review` when the
+  model is ready; payments advance the other stages.

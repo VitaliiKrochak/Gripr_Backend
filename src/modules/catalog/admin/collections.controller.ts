@@ -23,8 +23,8 @@ import {
 import { AdminGuard } from '../../../shared/guards/admin.guard';
 import { CollectionsService } from '../collections.service';
 import {
+  AdminCollectionDetailsDto,
   AdminCollectionDto,
-  CollectionDto,
   CollectionListQueryDto,
   CreateCollectionDto,
   UpdateCollectionDto,
@@ -45,16 +45,18 @@ export class AdminCollectionsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a collection' })
-  @ApiOkResponse({ type: CollectionDto })
-  get(@Param('id', ParseUUIDPipe) id: string): Promise<CollectionDto> {
+  @ApiOperation({ summary: 'Get a collection with its ordered products' })
+  @ApiOkResponse({ type: AdminCollectionDetailsDto })
+  get(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AdminCollectionDetailsDto> {
     return this.collectionsService.get(id);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a collection' })
-  @ApiCreatedResponse({ type: CollectionDto })
-  create(@Body() dto: CreateCollectionDto): Promise<CollectionDto> {
+  @ApiCreatedResponse({ type: AdminCollectionDetailsDto })
+  create(@Body() dto: CreateCollectionDto): Promise<AdminCollectionDetailsDto> {
     return this.collectionsService.create(dto);
   }
 
@@ -62,11 +64,11 @@ export class AdminCollectionsController {
   @ApiOperation({
     summary: 'Update a collection, including publish or archive via status',
   })
-  @ApiOkResponse({ type: CollectionDto })
+  @ApiOkResponse({ type: AdminCollectionDetailsDto })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCollectionDto,
-  ): Promise<CollectionDto> {
+  ): Promise<AdminCollectionDetailsDto> {
     return this.collectionsService.update(id, dto);
   }
 

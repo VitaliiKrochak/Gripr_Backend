@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminCollectionsController } from './admin/collections.controller';
+import { AdminFinishingOptionsController } from './admin/finishing.options.controller';
 import { AdminGemstonesController } from './admin/gemstones.controller';
 import { AdminMetalsController } from './admin/metals.controller';
 import { AdminProductsController } from './admin/products.controller';
@@ -15,6 +16,7 @@ import { ReferenceDataService } from './reference.data.service';
   controllers: [
     AdminMetalsController,
     AdminGemstonesController,
+    AdminFinishingOptionsController,
     AdminTagsController,
     AdminCollectionsController,
     AdminProductsController,

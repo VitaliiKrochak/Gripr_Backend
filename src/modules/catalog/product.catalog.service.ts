@@ -17,6 +17,7 @@ import {
 import type { ProductCardDto } from './dto/product.card.dto';
 import type { ProductSet } from './product.configuration';
 import { defaultProductOrder, ownProductsFirst } from './product.order';
+import { PRICING_RELATIONS } from './product.pricing';
 import { loadProductDetails } from './products.service';
 
 export const isPublished = eq(products.status, 'published');
@@ -34,17 +35,21 @@ export class ProductCatalogService {
     orderBy?: SQL[];
     limit: number;
     offset?: number;
+    /** Uses `orderBy` as is, e.g. for an order chosen by administrators. */
+    exactOrder?: boolean;
   }): Promise<ProductCardDto[]> {
+    const orderBy = options.orderBy
+      ? options.exactOrder
+        ? options.orderBy
+        : ownProductsFirst(options.orderBy)
+      : defaultProductOrder();
+
     return this.db
       .select(this.cardColumns())
       .from(products)
       .leftJoin(collections, eq(collections.id, products.collectionId))
       .where(and(isPublished, options.where))
-      .orderBy(
-        ...(options.orderBy
-          ? ownProductsFirst(options.orderBy)
-          : defaultProductOrder()),
-      )
+      .orderBy(...orderBy)
       .limit(options.limit)
       .offset(options.offset ?? 0);
   }
@@ -106,17 +111,7 @@ export class ProductCatalogService {
           limit: 1,
           columns: { url: true },
         },
-        optionGroups: {
-          orderBy: (groups) => [asc(groups.sortOrder), asc(groups.createdAt)],
-          with: {
-            values: {
-              orderBy: (values) => [
-                asc(values.sortOrder),
-                asc(values.createdAt),
-              ],
-            },
-          },
-        },
+        ...PRICING_RELATIONS,
       },
     });
   }
@@ -173,7 +168,7 @@ export class ProductCatalogService {
       name: products.name,
       type: products.type,
       shortDescription: products.shortDescription,
-      priceFrom: products.basePrice,
+      priceFrom: products.priceFrom,
       productionDaysMin: products.productionDaysMin,
       productionDaysMax: products.productionDaysMax,
       availability: products.availability,

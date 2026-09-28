@@ -1,18 +1,21 @@
 import { relations } from 'drizzle-orm';
 import {
   collections,
+  finishingOptions,
   gemstones,
   metals,
   optionGroups,
   optionValues,
   productImages,
   products,
+  productStones,
   productTags,
   tags,
 } from './catalog.schema';
-import { customRequests } from './custom.requests.schema';
+import { customProposals, customRequests } from './custom.requests.schema';
 import { customers } from './customers.schema';
 import { designCandidates } from './designs.schema';
+import { messages } from './messages.schema';
 import {
   cartItems,
   orderItems,
@@ -33,6 +36,7 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   }),
   images: many(productImages),
   optionGroups: many(optionGroups),
+  stones: many(productStones),
   productTags: many(productTags),
   designCandidate: one(designCandidates, {
     fields: [products.id],
@@ -89,6 +93,21 @@ export const optionValuesRelations = relations(optionValues, ({ one }) => ({
     fields: [optionValues.gemstoneId],
     references: [gemstones.id],
   }),
+  finishing: one(finishingOptions, {
+    fields: [optionValues.finishingId],
+    references: [finishingOptions.id],
+  }),
+}));
+
+export const productStonesRelations = relations(productStones, ({ one }) => ({
+  product: one(products, {
+    fields: [productStones.productId],
+    references: [products.id],
+  }),
+  gemstone: one(gemstones, {
+    fields: [productStones.gemstoneId],
+    references: [gemstones.id],
+  }),
 }));
 
 export const cartItemsRelations = relations(cartItems, ({ one }) => ({
@@ -141,13 +160,43 @@ export const productionStepsRelations = relations(
   }),
 );
 
-export const customRequestsRelations = relations(customRequests, ({ one }) => ({
-  customer: one(customers, {
-    fields: [customRequests.customerId],
-    references: [customers.id],
+export const customRequestsRelations = relations(
+  customRequests,
+  ({ one, many }) => ({
+    customer: one(customers, {
+      fields: [customRequests.customerId],
+      references: [customers.id],
+    }),
+    order: one(orders, {
+      fields: [customRequests.orderId],
+      references: [orders.id],
+    }),
+    product: one(products, {
+      fields: [customRequests.productId],
+      references: [products.id],
+    }),
+    proposals: many(customProposals),
   }),
-  order: one(orders, {
-    fields: [customRequests.orderId],
-    references: [orders.id],
+);
+
+export const customProposalsRelations = relations(
+  customProposals,
+  ({ one }) => ({
+    request: one(customRequests, {
+      fields: [customProposals.requestId],
+      references: [customRequests.id],
+    }),
+  }),
+);
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  order: one(orders, { fields: [messages.orderId], references: [orders.id] }),
+  customRequest: one(customRequests, {
+    fields: [messages.customRequestId],
+    references: [customRequests.id],
+  }),
+  stage: one(productionStages, {
+    fields: [messages.stageId],
+    references: [productionStages.id],
   }),
 }));

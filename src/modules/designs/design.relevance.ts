@@ -20,8 +20,10 @@ const TYPE_TERMS: Record<Exclude<ProductType, 'other'>, string[]> = {
   earrings: ['earring', 'earrings', 'ear stud', 'studs', 'hoop earrings'],
   pendant: ['pendant', 'charm', 'amulet', 'medallion', 'locket', 'talisman'],
   necklace: ['necklace', 'choker', 'chain necklace'],
+  chain: ['chain link', 'link chain', 'curb chain', 'rope chain'],
   bracelet: ['bracelet', 'bangle', 'cuff bracelet'],
   brooch: ['brooch'],
+  cufflinks: ['cufflink', 'cufflinks', 'cuff links'],
 };
 
 const GENERAL_TERMS = [

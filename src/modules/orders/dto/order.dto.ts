@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 import {
   ORDER_KINDS,
   ORDER_STATUSES,
@@ -15,6 +16,8 @@ import type {
 } from '../../../integrations/database/database.schema';
 import { ImageDto } from '../../catalog/dto/collection.dto';
 import { SelectedOptionDto } from '../../storefront/storefront.dto';
+import { JewelrySpecificationDto } from '../../../shared/specification/jewelry.specification.dto';
+import type { NextPayment } from '../order.balance';
 
 export class ProductionStageSummaryDto {
   id: string;
@@ -48,6 +51,9 @@ export class OrderItemDto {
   imageUrl: string | null;
   selectedOptions: SelectedOptionDto[];
   engravingText: string | null;
+  /** Approved specification of a custom piece. */
+  @ApiProperty({ type: JewelrySpecificationDto, nullable: true })
+  specification: JewelrySpecificationDto | null;
   fromStock: boolean;
   quantity: number;
   unitPrice: number;
@@ -90,8 +96,16 @@ export class AdminOrderPaymentDto extends OrderPaymentDto {
 }
 
 export class NextPaymentDto {
-  @ApiProperty({ enum: ['full', 'deposit', 'remainder'] })
-  type: 'full' | 'deposit' | 'remainder';
+  @ApiProperty({
+    enum: [
+      'full',
+      'deposit',
+      'model_prepayment',
+      'production_prepayment',
+      'remainder',
+    ],
+  })
+  type: NextPayment['type'];
   amount: number;
 }
 
@@ -135,8 +149,15 @@ export class OrderDto {
   subtotal: number;
   discount: number;
   total: number;
+  /** Legacy custom orders: first payment. */
   depositAmount: number | null;
+  /** Staged custom orders: 3D model prepayment. */
+  modelPaymentAmount: number | null;
+  /** Staged custom orders: prepayment due before manufacturing. */
+  productionPaymentAmount: number | null;
   paidAmount: number;
+  /** Custom request the order was created from. */
+  customRequestId: string | null;
   /** What the customer should pay next, or null. */
   nextPayment: NextPaymentDto | null;
   productionDaysMin: number;
@@ -169,6 +190,14 @@ export class AdminOrderDto extends OrderDto {
   /** Statuses the order can move to next. */
   @ApiProperty({ enum: ORDER_STATUSES, isArray: true })
   allowedTransitions: OrderStatus[];
+}
+
+export class ModelChangesDto {
+  /** What should change in the 3D model. */
+  @IsString()
+  @MinLength(3)
+  @MaxLength(5000)
+  comment: string;
 }
 
 export class AdminOrderListItemDto extends OrderSummaryDto {

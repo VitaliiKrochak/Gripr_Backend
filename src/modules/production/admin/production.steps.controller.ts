@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -20,6 +21,7 @@ import { AdminOrderDto } from '../../orders/dto/order.dto';
 import { OrdersService } from '../../orders/orders.service';
 import {
   CreateProductionStepsDto,
+  ReorderProductionStepsDto,
   UpdateProductionStepDto,
 } from '../dto/production.step.dto';
 import { ProductionStepsService } from '../production.steps.service';
@@ -45,6 +47,18 @@ export class AdminProductionStepsController {
     @Body() dto: CreateProductionStepsDto,
   ): Promise<AdminOrderDto> {
     await this.steps.create(orderId, itemId, dto);
+    return this.orders.get(orderId);
+  }
+
+  @Put('orders/:orderId/items/:itemId/production-steps/order')
+  @ApiOperation({ summary: 'Reorder all production steps of an order item' })
+  @ApiOkResponse({ type: AdminOrderDto })
+  async reorder(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: ReorderProductionStepsDto,
+  ): Promise<AdminOrderDto> {
+    await this.steps.reorder(orderId, itemId, dto.ids);
     return this.orders.get(orderId);
   }
 

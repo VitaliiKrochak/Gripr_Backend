@@ -1,0 +1,1 @@
+ALTER TABLE "app"."option_values" DROP COLUMN "ring_size";

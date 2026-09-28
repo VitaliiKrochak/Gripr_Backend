@@ -49,10 +49,14 @@ import {
   isOpenModel,
   positionOrder,
 } from '../catalog/product.order';
-import type { ProductDetails } from '../catalog/products.service';
+import {
+  loadProductDetails,
+  type ProductDetails,
+} from '../catalog/products.service';
 import { ReferenceDataService } from '../catalog/reference.data.service';
 import { rankRecommendations } from './recommendations';
 import type {
+  ProductCharacteristicsDto,
   QuoteDto,
   QuoteRequestDto,
   StorefrontCollectionDetailsDto,
@@ -61,6 +65,7 @@ import type {
   StorefrontHomeDto,
   StorefrontProductDto,
   StorefrontProductQueryDto,
+  StorefrontReferenceDto,
 } from './storefront.dto';
 
 const HOME_SECTION_SIZE = 8;
@@ -118,9 +123,34 @@ export class StorefrontService {
     return this.toStorefrontProduct(await this.findProduct(slug));
   }
 
-  async quote(slug: string, dto: QuoteRequestDto): Promise<QuoteDto> {
-    const product = await this.findProduct(slug);
+  quote(slug: string, dto: QuoteRequestDto): Promise<QuoteDto> {
+    return this.findProduct(slug).then((product) => this.price(product, dto));
+  }
 
+  /** Storefront view of a product in any status, for administrators. */
+  async previewProduct(id: string): Promise<StorefrontProductDto> {
+    return this.toStorefrontProduct(await this.findAnyProduct(id));
+  }
+
+  previewQuote(id: string, dto: QuoteRequestDto): Promise<QuoteDto> {
+    return this.findAnyProduct(id).then((product) => this.price(product, dto));
+  }
+
+  async reference(): Promise<StorefrontReferenceDto> {
+    const [metalList, gemstoneList, finishingOptions] = await Promise.all([
+      this.referenceData.listMetals(true),
+      this.referenceData.listGemstones(true),
+      this.referenceData.listFinishingOptions(true),
+    ]);
+
+    return {
+      metals: metalList,
+      gemstones: gemstoneList,
+      finishingOptions,
+    };
+  }
+
+  private price(product: ProductDetails, dto: QuoteRequestDto): QuoteDto {
     try {
       return configureProduct(
         this.availableOnly(product),
@@ -185,6 +215,8 @@ export class StorefrontService {
 
     const items = await this.catalog.cards({
       where: eq(products.collectionId, collection.id),
+      orderBy: [asc(products.collectionSortOrder), ...defaultProductOrder()],
+      exactOrder: true,
       limit: 200,
     });
     const setPrice = collection.isSet
@@ -228,8 +260,8 @@ export class StorefrontService {
           .orderBy(asc(collections.sortOrder), asc(collections.name)),
         this.db
           .select({
-            min: sql<number>`coalesce(min(${products.basePrice}), 0)::int`,
-            max: sql<number>`coalesce(max(${products.basePrice}), 0)::int`,
+            min: sql<number>`coalesce(min(${products.priceFrom}), 0)::int`,
+            max: sql<number>`coalesce(max(${products.priceFrom}), 0)::int`,
           })
           .from(products)
           .where(isPublished),
@@ -258,6 +290,55 @@ export class StorefrontService {
     }
 
     return product;
+  }
+
+  private async findAnyProduct(id: string): Promise<ProductDetails> {
+    const product = await loadProductDetails(this.db, eq(products.id, id));
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    return product;
+  }
+
+  private characteristics(
+    product: ProductDetails,
+    defaultQuote: QuoteDto | null,
+  ): ProductCharacteristicsDto {
+    const metalsById = new Map<
+      string,
+      ProductCharacteristicsDto['metals'][0]
+    >();
+    const coatings = new Set<string>();
+
+    for (const group of product.optionGroups) {
+      for (const value of group.values) {
+        if (value.metal) metalsById.set(value.metal.id, value.metal);
+        if (group.kind === 'coating') {
+          coatings.add(value.finishing?.name ?? value.label);
+        }
+      }
+    }
+
+    return {
+      metals: [...metalsById.values()],
+      weightGrams: defaultQuote?.breakdown.weightGrams ?? product.weightGrams,
+      widthMm: product.widthMm,
+      heightMm: product.heightMm,
+      stones: product.stones.map((stone) => ({
+        name: stone.gemstone.name,
+        variation: stone.variation,
+        sizeMm: stone.sizeMm,
+        carat: stone.carat,
+        quantity: stone.quantity,
+      })),
+      stoneCount: product.stones.reduce(
+        (sum, stone) => sum + stone.quantity,
+        0,
+      ),
+      coatings: [...coatings],
+    };
   }
 
   /** Hides unavailable values so customers cannot select them. */
@@ -292,12 +373,14 @@ export class StorefrontService {
       shortDescription: product.shortDescription,
       description: product.description,
       specifications: product.specifications,
+      characteristics: this.characteristics(product, defaultQuote),
       availability: product.availability,
       inStock: product.availability === 'in_stock' && product.stockQuantity > 0,
       isHot: product.isHot,
       isNew: product.isNew,
       isFeatured: product.isFeatured,
       basePrice: product.basePrice,
+      priceFrom: defaultQuote?.unitPrice ?? product.priceFrom,
       productionDaysMin: product.productionDaysMin,
       productionDaysMax: product.productionDaysMax,
       seoTitle: product.seoTitle,
@@ -327,9 +410,10 @@ export class StorefrontService {
             label: value.label,
             metal: value.metal,
             gemstone: value.gemstone,
+            finishing: value.finishing,
             stoneCarat: value.stoneCarat,
             stoneSizeMm: value.stoneSizeMm,
-            ringSize: value.ringSize,
+            sizeValue: value.sizeValue,
             priceDelta: value.priceDelta,
             productionDaysDelta: value.productionDaysDelta,
             isDefault: value.isDefault,
@@ -426,10 +510,10 @@ export class StorefrontService {
 
     if (query.type) conditions.push(eq(products.type, query.type));
     if (query.priceMin !== undefined) {
-      conditions.push(gte(products.basePrice, query.priceMin));
+      conditions.push(gte(products.priceFrom, query.priceMin));
     }
     if (query.priceMax !== undefined) {
-      conditions.push(lte(products.basePrice, query.priceMax));
+      conditions.push(lte(products.priceFrom, query.priceMax));
     }
     if (query.inStock) {
       conditions.push(
@@ -475,9 +559,9 @@ export class StorefrontService {
       case 'newest':
         return [sql`${products.publishedAt} desc nulls last`];
       case 'price_asc':
-        return [sql`${products.basePrice} asc`];
+        return [sql`${products.priceFrom} asc`];
       case 'price_desc':
-        return [sql`${products.basePrice} desc`];
+        return [sql`${products.priceFrom} desc`];
       default:
         return [sql`${products.isFeatured} desc`, ...positionOrder()];
     }

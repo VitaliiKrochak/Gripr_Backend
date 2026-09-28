@@ -4,6 +4,7 @@ import {
   ConfigurableProduct,
   configureProduct,
   ConfigurationError,
+  priceFrom,
 } from './product.configuration';
 
 function value(
@@ -117,6 +118,92 @@ describe('configureProduct', () => {
         [],
       ).unitPrice,
     ).toBe(500);
+  });
+});
+
+describe('weight-based pricing', () => {
+  const chain: ConfigurableProduct = {
+    basePrice: 200_000,
+    productionDaysMin: 5,
+    productionDaysMax: 7,
+    weightGrams: 4,
+    stones: [
+      { quantity: 3, unitPrice: 10_000 },
+      { quantity: 1, unitPrice: 50_000 },
+    ],
+    optionGroups: [
+      {
+        id: 'metal',
+        name: 'Метал',
+        kind: 'metal',
+        isRequired: true,
+        values: [
+          {
+            ...value('gold', 0, { isDefault: true }),
+            metal: { pricePerGram: 300_000 },
+          },
+          { ...value('silver'), metal: { pricePerGram: 5_000 } },
+        ],
+      },
+      {
+        id: 'length',
+        name: 'Довжина',
+        kind: 'size',
+        isRequired: true,
+        values: [
+          { ...value('45', 0, { isDefault: true }), weightDeltaGrams: 0 },
+          { ...value('55', 0), weightDeltaGrams: 1 },
+        ],
+      },
+      {
+        id: 'coating',
+        name: 'Покриття',
+        kind: 'coating',
+        isRequired: false,
+        values: [value('rhodium', 40_000)],
+      },
+    ],
+  };
+
+  it('adds metal by weight, stones, and option surcharges', () => {
+    expect(configureProduct(chain, []).breakdown).toEqual({
+      manufacturing: 200_000,
+      metal: 1_200_000,
+      stones: 80_000,
+      options: 0,
+      weightGrams: 4,
+    });
+
+    const longer = configureProduct(chain, ['55', 'rhodium']);
+    expect(longer.breakdown).toMatchObject({
+      metal: 1_500_000,
+      options: 40_000,
+      weightGrams: 5,
+    });
+    expect(longer.unitPrice).toBe(200_000 + 1_500_000 + 80_000 + 40_000);
+    expect(configureProduct(chain, ['silver']).breakdown.metal).toBe(20_000);
+  });
+
+  it('keeps products without weight priced as before', () => {
+    expect(configureProduct(ring, ['size-16']).breakdown).toEqual({
+      manufacturing: 1_000_000,
+      metal: 0,
+      stones: 0,
+      options: 0,
+      weightGrams: null,
+    });
+  });
+
+  it('uses the default configuration as the card price', () => {
+    expect(priceFrom(chain)).toBe(1_480_000);
+    expect(
+      priceFrom({
+        ...chain,
+        optionGroups: [
+          { ...chain.optionGroups[0], values: [value('no-default')] },
+        ],
+      }),
+    ).toBe(280_000);
   });
 });
 
