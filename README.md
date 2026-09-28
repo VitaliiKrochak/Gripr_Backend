@@ -93,6 +93,10 @@ the admin endpoints.
   dashboard and set `LIQPAY_RRO_GOOD_ID`; see
   [`docs/modules/payments.md`](docs/modules/payments.md#fiscal-receipts).
 - Nova Poshta: `NOVAPOSHTA_API_KEY`.
+- Sketchfab design import (optional): `SKETCHFAB_API_TOKEN` raises rate
+  limits; `DESIGN_IMPORT_ENABLED=false` turns off the nightly import at 02:00
+  Kyiv time. Staff can also start an import from the design review queue; see
+  [`docs/modules/designs.md`](docs/modules/designs.md).
 
 All variables are listed in `.env.example`; the application refuses to start
 when a required one is missing.

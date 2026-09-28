@@ -85,6 +85,12 @@ The product response contains `optionGroups` with only available values, and
 5. Offer a size guide that links to the profile ring size
    (`GET /customers/me`, `ringSize`) to preselect the matching size value.
 
+When `designCredit` is not `null`, the product page must show a public license
+section after the description: the model title, the author (linked to
+`authorUrl`), the source link, and `licenseName` linked to `licenseUrl`. Product
+listings already come ordered with these products after our own; do not
+re-sort them on the client.
+
 For sets, show `setPrice` and `setPriceDiscounted` and an "add the whole set"
 button that calls `POST /customers/me/cart/sets/:collectionSlug`.
 
@@ -212,11 +218,15 @@ All admin routes require `app_metadata.role = "admin"`.
 | Production | `GET`, `POST`, `PATCH`, `DELETE /production-stages[/:id]`; `POST /orders/:orderId/items/:itemId/production-steps`, `PATCH` or `DELETE /production-steps/:id`; photos with `folder: "production"` |
 | Custom requests | `GET /custom-requests?status=`, `GET /custom-requests/:id`, `PATCH /custom-requests/:id`, `POST /custom-requests/:id/quote` |
 | Customers | `GET /customers?q=`, `GET /customers/:id` |
+| Open designs | `GET /design-candidates?status=&type=&license=&ipRisk=&q=&sort=`, `GET /design-candidates/:id`, `POST /design-candidates/:id/approve`, `POST .../:id/reject`, `POST .../:id/restore`, `POST /design-candidates/import`, `GET /design-candidates/import/status` |
 
 Admin workflow notes:
 
 - **Publishing:** create the product as `draft`, add images and options,
   preview it, then set `status: "published"`. Archive instead of deleting.
+- **Open designs:** approving a candidate returns a draft product; open its
+  editor to set the price (publishing with `basePrice` 0 answers `409`). Show
+  the product's `designCredit` read-only in the editor.
 - **Configurator setup:** create one group per choice (for example "Метал",
   "Камінь", "Розмір", "Гравіювання"), add values with `priceDelta` and
   `productionDaysDelta`, and mark one default per required group. Link images

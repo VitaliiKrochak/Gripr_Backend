@@ -16,6 +16,7 @@ import {
 } from '../../integrations/database/database.schema';
 import type { ProductCardDto } from './dto/product.card.dto';
 import type { ProductSet } from './product.configuration';
+import { defaultProductOrder, ownProductsFirst } from './product.order';
 import { loadProductDetails } from './products.service';
 
 export const isPublished = eq(products.status, 'published');
@@ -39,7 +40,11 @@ export class ProductCatalogService {
       .from(products)
       .leftJoin(collections, eq(collections.id, products.collectionId))
       .where(and(isPublished, options.where))
-      .orderBy(...(options.orderBy ?? this.defaultOrder()))
+      .orderBy(
+        ...(options.orderBy
+          ? ownProductsFirst(options.orderBy)
+          : defaultProductOrder()),
+      )
       .limit(options.limit)
       .offset(options.offset ?? 0);
   }
@@ -52,7 +57,10 @@ export class ProductCatalogService {
     return total;
   }
 
-  /** Cards for the given ids in the same order; unpublished ids are skipped. */
+  /**
+   * Cards for the given ids in the same order; unpublished ids are skipped.
+   * Callers must already have ranked open models after own products.
+   */
   async cardsByIds(ids: string[]): Promise<ProductCardDto[]> {
     if (!ids.length) {
       return [];
@@ -156,13 +164,6 @@ export class ProductCatalogService {
     }
 
     return [...sets.values()];
-  }
-
-  defaultOrder(): SQL[] {
-    return [
-      sql`${products.sortOrder} asc`,
-      sql`${products.publishedAt} desc nulls last`,
-    ];
   }
 
   private cardColumns() {

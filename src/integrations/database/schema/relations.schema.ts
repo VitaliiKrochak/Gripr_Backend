@@ -12,6 +12,7 @@ import {
 } from './catalog.schema';
 import { customRequests } from './custom.requests.schema';
 import { customers } from './customers.schema';
+import { designCandidates } from './designs.schema';
 import {
   cartItems,
   orderItems,
@@ -33,7 +34,21 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   images: many(productImages),
   optionGroups: many(optionGroups),
   productTags: many(productTags),
+  designCandidate: one(designCandidates, {
+    fields: [products.id],
+    references: [designCandidates.productId],
+  }),
 }));
+
+export const designCandidatesRelations = relations(
+  designCandidates,
+  ({ one }) => ({
+    product: one(products, {
+      fields: [designCandidates.productId],
+      references: [products.id],
+    }),
+  }),
+);
 
 export const productTagsRelations = relations(productTags, ({ one }) => ({
   product: one(products, {

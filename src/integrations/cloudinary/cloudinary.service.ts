@@ -41,6 +41,38 @@ export class CloudinaryService {
     };
   }
 
+  /** Server-side upload of a remote image into `folder`. */
+  async uploadFromUrl(
+    url: string,
+    folder: string,
+  ): Promise<{ publicId: string; url: string }> {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const body = new URLSearchParams({
+      file: url,
+      folder,
+      timestamp: String(timestamp),
+      api_key: this.config.apiKey,
+      signature: this.sign({ folder, timestamp }),
+    });
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${this.config.cloudName}/image/upload`,
+      { method: 'POST', body },
+    );
+    const payload = (await response.json()) as {
+      public_id?: string;
+      secure_url?: string;
+      error?: { message?: string };
+    };
+
+    if (!response.ok || !payload.public_id || !payload.secure_url) {
+      throw new Error(
+        `Cloudinary upload failed: ${payload.error?.message ?? response.status}`,
+      );
+    }
+
+    return { publicId: payload.public_id, url: payload.secure_url };
+  }
+
   async destroy(publicId: string): Promise<void> {
     const timestamp = Math.floor(Date.now() / 1000);
     const body = new URLSearchParams({
