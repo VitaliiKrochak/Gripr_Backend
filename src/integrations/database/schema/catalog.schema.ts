@@ -251,6 +251,14 @@ export const optionValues = appSchema.table(
     }),
     stoneCarat: real('stone_carat'),
     stoneSizeMm: real('stone_size_mm'),
+    /** Stones in this choice, for the price calculator. */
+    stoneQuantity: integer('stone_quantity').notNull().default(1),
+    /** Purchase price per stone for the calculator, kopiykas. */
+    purchasePrice: integer('purchase_price'),
+    settingType: text('setting_type').$type<SettingType>(),
+    cut: text('cut').$type<StoneCut>(),
+    /** Paid per stone to a hired or outside setter, kopiykas. */
+    settingCost: integer('setting_cost').notNull().default(0),
     /** Ring size or length in cm, depending on the product type. */
     sizeValue: real('size_value'),
     /** Extra metal in grams when the value is selected (e.g. a larger size). */

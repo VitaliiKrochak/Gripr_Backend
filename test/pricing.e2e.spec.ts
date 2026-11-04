@@ -201,11 +201,30 @@ describe('Pricing calculator (e2e)', () => {
     const all = await metals();
     const gold = all.find((m) => m.code === 'gold-585-yellow')!;
     const silver = all.find((m) => m.code === 'silver-925')!;
+    const gemstones = await request(server())
+      .get('/api/gemstones')
+      .set('Cookie', admin)
+      .expect(200);
+    const [diamond, zirconia] = gemstones.body as Array<{ id: string }>;
     const optionGroups = [
       {
         kind: 'metal',
         isRequired: true,
         values: [{ metalId: gold.id, isDefault: true }, { metalId: silver.id }],
+      },
+      {
+        kind: 'stone',
+        isRequired: false,
+        values: [
+          {
+            gemstoneId: diamond.id,
+            stoneSizeMm: 3,
+            stoneQuantity: 2,
+            purchasePrice: 400_000,
+            settingType: 'prong',
+          },
+          { gemstoneId: zirconia.id, priceDelta: 5_000 },
+        ],
       },
     ];
 
@@ -224,6 +243,10 @@ describe('Pricing calculator (e2e)', () => {
       totalPrice: 3_840_000,
     });
     expect(preview.body.warnings).toEqual([]);
+    expect(preview.body.optionPrices).toEqual([
+      { groupIndex: 1, valueIndex: 0, priceDelta: expect.any(Number) },
+    ]);
+    expect(preview.body.optionPrices[0].priceDelta).toBeGreaterThan(800_000);
 
     const created = await request(server())
       .post('/api/products')
@@ -244,6 +267,12 @@ describe('Pricing calculator (e2e)', () => {
       priceFrom: 3_840_000,
       pricing: { mode: 'auto', laborHours: 4 },
     });
+
+    const stoneValues = created.body.optionGroups[1].values;
+    expect(stoneValues[0].priceDelta).toBe(
+      preview.body.optionPrices[0].priceDelta,
+    );
+    expect(stoneValues[1].priceDelta).toBe(5_000);
 
     const silverValue = created.body.optionGroups[0].values[1];
     const silverQuote = await request(server())

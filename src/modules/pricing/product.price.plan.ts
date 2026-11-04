@@ -43,6 +43,13 @@ export interface PlanValue {
   priceDelta: number;
   isDefault: boolean;
   isAvailable: boolean;
+  /** Calculator inputs of a stone choice. */
+  stoneSizeMm?: number | null;
+  stoneQuantity?: number;
+  purchasePrice?: number | null;
+  settingType?: ItemStoneInput['settingType'];
+  cut?: ItemStoneInput['cut'];
+  settingCost?: number;
 }
 
 export interface PlanGroup {
@@ -91,11 +98,20 @@ export const PLAN_WARNINGS = [
 ] as const;
 export type PlanWarning = (typeof PLAN_WARNINGS)[number];
 
+/** Calculated surcharge of a stone choice. */
+export interface PlanOptionPrice {
+  groupIndex: number;
+  valueIndex: number;
+  priceDelta: number;
+}
+
 export interface ProductPricePlan {
   basePrice: number;
   /** Unit price per stone, in the order of the input stones. */
   stoneUnitPrices: number[];
   variants: PlanVariant[];
+  /** Stone choices with a purchase price or setting type. */
+  optionPrices: PlanOptionPrice[];
   warnings: PlanWarning[];
 }
 
@@ -339,5 +355,41 @@ export function planProductPrices(
     }),
   );
 
-  return { basePrice, stoneUnitPrices, variants, warnings: [...warnings] };
+  // Stones are priced on their own, so a stone choice adds the price of its
+  // stones to whichever metal is chosen.
+  const optionPrices = input.optionGroups.flatMap((group, groupIndex) =>
+    group.kind === 'stone'
+      ? group.values.flatMap((value, valueIndex) => {
+          const stone: PlanStone = {
+            quantity: Math.max(1, value.stoneQuantity ?? 1),
+            unitPrice: 0,
+            purchasePrice: value.purchasePrice ?? null,
+            settingType: value.settingType ?? null,
+            cut: value.cut ?? null,
+            sizeMm: value.stoneSizeMm ?? null,
+            settingCost: value.settingCost ?? 0,
+          };
+
+          return isAutoStone(stone)
+            ? [
+                {
+                  groupIndex,
+                  valueIndex,
+                  priceDelta:
+                    stone.quantity *
+                    stoneUnitPrice(stone, input.pricing, family, settings),
+                },
+              ]
+            : [];
+        })
+      : [],
+  );
+
+  return {
+    basePrice,
+    stoneUnitPrices,
+    variants,
+    optionPrices,
+    warnings: [...warnings],
+  };
 }

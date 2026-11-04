@@ -139,6 +139,37 @@ export class CreateOptionValueDto {
   @Min(0)
   stoneSizeMm?: number | null;
 
+  /** Stones in this choice; the calculator prices them all. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  stoneQuantity?: number;
+
+  /**
+   * Purchase price of one stone, in kopiykas. With it or a setting type, the
+   * surcharge of a stone choice is calculated for automatically priced products.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  purchasePrice?: number | null;
+
+  @ApiProperty({ enum: SETTING_TYPES, required: false, nullable: true })
+  @IsOptional()
+  @IsIn(SETTING_TYPES)
+  settingType?: SettingType | null;
+
+  @ApiProperty({ enum: STONE_CUTS, required: false, nullable: true })
+  @IsOptional()
+  @IsIn(STONE_CUTS)
+  cut?: StoneCut | null;
+
+  /** Paid per stone to a hired or outside setter, in kopiykas. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  settingCost?: number;
+
   /** Ring size (e.g. 17.5) or length in cm (e.g. 45), by product type. */
   @IsOptional()
   @IsNumber()
@@ -468,6 +499,13 @@ export class OptionValueDto {
   finishing: FinishingOptionDto | null;
   stoneCarat: number | null;
   stoneSizeMm: number | null;
+  stoneQuantity: number;
+  purchasePrice: number | null;
+  @ApiProperty({ enum: SETTING_TYPES, nullable: true })
+  settingType: SettingType | null;
+  @ApiProperty({ enum: STONE_CUTS, nullable: true })
+  cut: StoneCut | null;
+  settingCost: number;
   sizeValue: number | null;
   weightDeltaGrams: number;
   priceDelta: number;

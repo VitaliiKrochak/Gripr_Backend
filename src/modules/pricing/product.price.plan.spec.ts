@@ -227,6 +227,54 @@ describe('planProductPrices', () => {
     expect(quote({ stones }, result, 0)).toBe(goldVariant.totalPrice + 12_300);
   });
 
+  it('prices stone choices like fixed stones and keeps hand-priced choices', () => {
+    const diamond = {
+      purchasePrice: 400_000,
+      settingType: 'prong' as const,
+      cut: 'round' as const,
+      settingCost: 0,
+    };
+    const optionGroups: PlanGroup[] = [
+      metalGroup('gold-585', 'silver-925'),
+      {
+        kind: 'stone',
+        isRequired: true,
+        values: [
+          {
+            metalId: null,
+            weightDeltaGrams: 0,
+            priceDelta: 0,
+            isDefault: true,
+            isAvailable: true,
+            stoneSizeMm: 3,
+            stoneQuantity: 3,
+            ...diamond,
+          },
+          {
+            metalId: null,
+            weightDeltaGrams: 0,
+            priceDelta: 5_000,
+            isDefault: false,
+            isAvailable: true,
+          },
+        ],
+      },
+    ];
+    const result = plan({ optionGroups });
+    const fixed = plan({
+      stones: [{ quantity: 3, unitPrice: 0, sizeMm: 3, ...diamond }],
+    });
+
+    expect(result.optionPrices).toEqual([
+      {
+        groupIndex: 1,
+        valueIndex: 0,
+        priceDelta: 3 * fixed.stoneUnitPrices[0],
+      },
+    ]);
+    expect(result.variants).toEqual(plan({}).variants);
+  });
+
   it('keeps the metal in the manufacturing price without a metal option', () => {
     const result = plan({
       optionGroups: [],

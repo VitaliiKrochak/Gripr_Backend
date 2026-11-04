@@ -393,6 +393,13 @@ export class ProductPriceVariantDto {
   result: ItemResultDto;
 }
 
+/** Calculated surcharge of a stone choice, by request position. */
+export class ProductOptionPriceDto {
+  groupIndex: number;
+  valueIndex: number;
+  priceDelta: number;
+}
+
 export class ProductPricePreviewDto {
   /** Manufacturing price to store on the product. */
   basePrice: number;
@@ -401,6 +408,9 @@ export class ProductPricePreviewDto {
   stoneUnitPrices: number[];
   @ApiProperty({ type: [ProductPriceVariantDto] })
   variants: ProductPriceVariantDto[];
+  /** Stone choices with a purchase price or setting type. */
+  @ApiProperty({ type: [ProductOptionPriceDto] })
+  optionPrices: ProductOptionPriceDto[];
   @ApiProperty({ enum: PLAN_WARNINGS, isArray: true })
   warnings: PlanWarning[];
 }

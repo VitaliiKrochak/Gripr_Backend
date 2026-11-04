@@ -124,6 +124,9 @@ An option group has a `kind` (`metal`, `stone`, `size`, `engraving`,
 Values carry a label and, depending on the kind, `metalId`, `gemstoneId`,
 `stoneCarat`, `stoneSizeMm`, `sizeValue`, or `finishingId` (a finishing
 option of the same kind), plus `priceDelta` (kopiykas, may be negative),
+the stone calculator inputs `stoneQuantity`, `purchasePrice`, `settingType`,
+`cut`, and `settingCost` (used for `stone` groups of automatically priced
+products; never shown on the storefront),
 `weightDeltaGrams`, `productionDaysDelta`, `isDefault` (one per group), and
 `isAvailable`.
 

@@ -36,6 +36,13 @@
       "when": 1793808584088,
       "tag": "0004_pricing_calculator",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793811203810,
+      "tag": "0005_stone_option_pricing",
+      "breakpoints": true
     }
   ]
 }

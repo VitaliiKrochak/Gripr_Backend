@@ -172,6 +172,18 @@ export class ProductPricingService {
             .where(eq(optionValues.id, value.id));
         }
       }
+
+      for (const price of plan.optionPrices) {
+        const value =
+          row.optionGroups[price.groupIndex]?.values[price.valueIndex];
+
+        if (value && value.priceDelta !== price.priceDelta) {
+          await tx
+            .update(optionValues)
+            .set({ priceDelta: price.priceDelta })
+            .where(eq(optionValues.id, value.id));
+        }
+      }
     }
   }
 

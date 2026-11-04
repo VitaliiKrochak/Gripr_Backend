@@ -117,11 +117,18 @@ calculated price into the parts the storefront quote adds up:
 - `basePrice` = the default metal's calculated price − its price per gram ×
   the default weight − calculated stones;
 - each metal option value gets `priceDelta` = its own calculated price − its
-  price per gram × weight − calculated stones − `basePrice`.
+  price per gram × weight − calculated stones − `basePrice`;
+- each value of a `stone` group with a purchase price or setting type gets
+  `priceDelta` = `stoneQuantity` × the stone unit price above (size from
+  `stoneSizeMm`, setting price for the default metal's family), so the
+  customer's choice of diamond, cubic zirconia, and so on changes the price
+  by the cost of that stone; other stone choices keep their entered surcharge.
 
-The default configuration then costs exactly the calculated price, other
-metals cost their own calculation, size weight changes are charged through
-the price per gram, and other option surcharges stay on top. A metal without
+The default configuration then costs exactly the calculated price plus the
+default stone choice of a required stone group, other metals cost their own
+calculation, size weight changes are charged through the price per gram, and
+other option surcharges stay on top. The preview returns stone choice
+surcharges as `optionPrices` (`groupIndex`, `valueIndex`, `priceDelta`). A metal without
 a market price keeps being charged by its entered price per gram on top of
 the calculated work (warning `missing_market_price`).
 
