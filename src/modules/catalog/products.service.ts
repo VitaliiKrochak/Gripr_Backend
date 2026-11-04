@@ -30,7 +30,7 @@ import type {
   CreateProductDto,
   UpdateProductDto,
 } from './dto/product.dto';
-import { refreshPriceFrom } from './product.pricing';
+import { ProductPricingService } from '../pricing/product.pricing.service';
 import { saveProductStructure, touchProduct } from './product.structure';
 
 const SLUG_CONFLICT = 'Product slug already exists';
@@ -39,7 +39,10 @@ const MISSING_REFERENCE =
 
 @Injectable()
 export class ProductsService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly productPricing: ProductPricingService,
+  ) {}
 
   async list(query: AdminProductListQueryDto): Promise<AdminProductPageDto> {
     const conditions: SQL[] = [];
@@ -116,7 +119,10 @@ export class ProductsService {
           optionGroups,
           images,
         });
-        await refreshPriceFrom(tx, eq(products.id, product.id));
+        await this.productPricing.refreshPrices(
+          tx,
+          eq(products.id, product.id),
+        );
         return product.id;
       }),
       { unique: SLUG_CONFLICT, inUse: MISSING_REFERENCE },
@@ -156,7 +162,7 @@ export class ProductsService {
           optionGroups,
           images,
         });
-        await refreshPriceFrom(tx, eq(products.id, id));
+        await this.productPricing.refreshPrices(tx, eq(products.id, id));
 
         if (current.designCredit) {
           await assertPricedForPublishing(tx, id);
@@ -250,7 +256,11 @@ export async function loadProductDetails(db: DatabaseExecutor, where: SQL) {
         with: {
           values: {
             orderBy: (values) => [asc(values.sortOrder), asc(values.createdAt)],
-            with: { metal: true, gemstone: true, finishing: true },
+            with: {
+              metal: { columns: { pricingProfile: false } },
+              gemstone: true,
+              finishing: true,
+            },
           },
         },
       },

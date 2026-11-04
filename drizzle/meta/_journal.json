@@ -29,6 +29,13 @@
       "when": 1790609022283,
       "tag": "0003_option_values_drop_ring_size",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793808584088,
+      "tag": "0004_pricing_calculator",
+      "breakpoints": true
     }
   ]
 }

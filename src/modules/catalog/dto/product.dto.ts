@@ -30,6 +30,9 @@ import type {
 } from '../../../integrations/database/database.schema';
 import { PaginationQueryDto } from '../../../shared/pagination/pagination.query.dto';
 import { DesignCreditDto } from '../../designs/dto/design.credit.dto';
+import { ProductPricingDto } from '../../pricing/dto/product.pricing.dto';
+import { SETTING_TYPES, STONE_CUTS } from '../../pricing/pricing.settings';
+import type { SettingType, StoneCut } from '../../pricing/pricing.settings';
 import {
   SLUG_MESSAGE,
   SLUG_PATTERN,
@@ -235,10 +238,35 @@ export class ProductStoneInputDto {
   @Min(1)
   quantity: number;
 
-  /** Price of one stone including setting, in kopiykas. */
+  /**
+   * Price of one stone including setting, in kopiykas. Recalculated for
+   * products with automatic pricing when the purchase price or setting is set.
+   */
   @IsInt()
   @Min(0)
   unitPrice: number;
+
+  /** Purchase price of one stone for the price calculator, in kopiykas. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  purchasePrice?: number | null;
+
+  @ApiProperty({ enum: SETTING_TYPES, required: false, nullable: true })
+  @IsOptional()
+  @IsIn(SETTING_TYPES)
+  settingType?: SettingType | null;
+
+  @ApiProperty({ enum: STONE_CUTS, required: false, nullable: true })
+  @IsOptional()
+  @IsIn(STONE_CUTS)
+  cut?: StoneCut | null;
+
+  /** Paid per stone to a hired or outside setter, in kopiykas. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  settingCost?: number;
 }
 
 export class CreateProductDto {
@@ -382,6 +410,18 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ProductImageInputDto)
   images?: ProductImageInputDto[];
+
+  /**
+   * Price calculator inputs. In `auto` mode the manufacturing price, metal
+   * surcharges, and stone prices are calculated on every save and when
+   * market rates or pricing settings change; `null` or `manual` keeps
+   * hand-entered prices.
+   */
+  @ApiProperty({ type: ProductPricingDto, required: false, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProductPricingDto)
+  pricing?: ProductPricingDto | null;
 }
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
@@ -457,6 +497,12 @@ export class ProductStoneDto {
   carat: number | null;
   quantity: number;
   unitPrice: number;
+  purchasePrice: number | null;
+  @ApiProperty({ enum: SETTING_TYPES, nullable: true })
+  settingType: SettingType | null;
+  @ApiProperty({ enum: STONE_CUTS, nullable: true })
+  cut: StoneCut | null;
+  settingCost: number;
   sortOrder: number;
 }
 
@@ -546,4 +592,6 @@ export class AdminProductDto {
   /** Set when the product was made from an imported open-license design. */
   @ApiProperty({ type: DesignCreditDto, nullable: true })
   designCredit: DesignCreditDto | null;
+  @ApiProperty({ type: ProductPricingDto, nullable: true })
+  pricing: ProductPricingDto | null;
 }

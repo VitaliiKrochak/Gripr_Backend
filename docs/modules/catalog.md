@@ -15,7 +15,9 @@ Metals, gemstones, and finishing options have a unique `code` (slug) used in
 storefront filters, a display name, sort order, and `isActive`. Metals also
 have a `family` (`gold`, `silver`, `platinum`, `palladium`, `other`), purity,
 colour, and an optional `pricePerGram` in kopiykas; changing the price per
-gram recomputes the "price from" of every product that offers the metal.
+gram, family, or purity reprices auto-priced products and recomputes the
+"price from" of every product that offers the metal. Workshop tariffs of a
+metal are managed by the [pricing](pricing.md#metals) module.
 
 Finishing options are the reusable workshop operations: `kind` is
 `engraving` (mechanical, laser), `coating` (rhodium, white rhodium, black
@@ -74,7 +76,8 @@ keep their item snapshots.
 state in one request, in one transaction:
 
 - `stones`: stone groups with `gemstoneId`, `variation`, `sizeMm`, `carat`,
-  `quantity`, and `unitPrice` (per stone, kopiykas).
+  `quantity`, and `unitPrice` (per stone, kopiykas), plus the calculator
+  inputs `purchasePrice`, `settingType`, `cut`, and `settingCost`.
 - `optionGroups`: groups with their `values`.
 - `images`: images with `publicId`, `url`, `alt`, and `optionValueId`.
 
@@ -152,3 +155,16 @@ stones when a required group has no default). It is stored on the product,
 recomputed whenever the product, its options, or a metal price changes, and
 used for cards, price filters, and sorting. Products without a weight or
 metal price per gram keep their previous prices.
+
+### Automatic pricing
+
+`pricing` on create or update stores the price calculator inputs: `mode`
+(`auto` or `manual`), `metalId` (when there is no metal option group), work
+type and hours, jeweler and setter (`owner` or `hired`), scenario, urgency,
+extra profit, delivery/packaging/consumables (`null` uses the settings),
+`services`, `fittings`, and `overrides`. In `auto` mode the server calculates
+`basePrice`, the unit price of stones with a purchase price or setting type,
+and the `priceDelta` of metal option values on every save, ignoring the sent
+values; see [pricing](pricing.md#auto-priced-products). `null` (existing
+products) or `manual` keeps hand-entered prices. `pricing` and the stone
+purchase fields are admin-only and never returned by the storefront.

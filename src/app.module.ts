@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { CloudinaryModule } from './integrations/cloudinary/cloudinary.module';
 import { DatabaseModule } from './integrations/database/database.module';
 import { LiqPayModule } from './integrations/liqpay/liqpay.module';
+import { NbuModule } from './integrations/nbu/nbu.module';
 import { NovaPoshtaModule } from './integrations/novaposhta/novaposhta.module';
 import { SketchfabModule } from './integrations/sketchfab/sketchfab.module';
 import { SupabaseModule } from './integrations/supabase/supabase.module';
@@ -38,6 +39,7 @@ import { AuthGuard } from './shared/guards/auth.guard';
     LiqPayModule,
     NovaPoshtaModule,
     SketchfabModule,
+    NbuModule,
     HealthModule,
     AuthModule,
     CustomersModule,

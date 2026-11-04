@@ -70,8 +70,13 @@
 - Store and transfer money as integer kopiykas. Never accept prices from
   clients; recompute them on the server from option value ids.
 - After any write that changes product pricing (product fields, stones,
-  options, or a metal price per gram), call `refreshPriceFrom` in the same
-  transaction so `products.price_from` stays correct.
+  options, or a metal), call `ProductPricingService.refreshPrices` in the same
+  transaction so auto-priced products are recalculated and
+  `products.price_from` stays correct. After changing pricing settings, market
+  rates, or metal tariffs, call `ProductPricingService.repriceAll`.
+- Keep workshop costs and tariffs (`metals.pricing_profile`,
+  `products.pricing`, stone purchase fields) out of storefront responses:
+  select explicit columns or map fields one by one.
 - Store descriptive snapshots (option labels, specification names) next to
   reference ids, so later reference-data edits never rewrite orders,
   requests, or proposals.

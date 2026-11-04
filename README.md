@@ -97,6 +97,9 @@ the admin endpoints.
   limits; `DESIGN_IMPORT_ENABLED=false` turns off the nightly import at 02:00
   Kyiv time. Staff can also start an import from the design review queue; see
   [`docs/modules/designs.md`](docs/modules/designs.md).
+- NBU metal and USD rates need no configuration; they are fetched daily at
+  06:00 Kyiv time and on demand from the admin pricing page; see
+  [`docs/modules/pricing.md`](docs/modules/pricing.md).
 
 All variables are listed in `.env.example`; the application refuses to start
 when a required one is missing.

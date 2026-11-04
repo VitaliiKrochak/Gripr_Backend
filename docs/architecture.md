@@ -24,6 +24,7 @@ src/
     delivery/              # Nova Poshta city and branch lookup
     dashboard/             # admin summary
     designs/               # open-license Sketchfab import and review queue
+    pricing/               # price calculator, NBU rates, auto-priced products
     health/
   shared/                  # reusable building blocks, no Nest modules
     decorators/
@@ -39,6 +40,7 @@ src/
     cloudinary/
     database/              # Drizzle schema, client, and seed
     liqpay/
+    nbu/                   # National Bank of Ukraine exchange rates
     novaposhta/
     sketchfab/             # public model search
     supabase/
@@ -208,14 +210,21 @@ the same transaction.
 - **Sketchfab** search supplies open-license jewelry model metadata to the
   [designs](modules/designs.md) importer. Approved previews are copied into
   Cloudinary server-side with `CloudinaryService.uploadFromUrl()`.
+- **NBU** (National Bank of Ukraine) publishes official USD and precious
+  metal rates without a key; the [pricing](modules/pricing.md) module stores
+  them for the price calculator.
 
 ## Scheduled jobs
 
 `ScheduleModule.forRoot()` in `app.module.ts` enables `@nestjs/schedule`
 decorators. Jobs run inside the API process, so each running API instance
-executes them; a job must tolerate that or guard itself. The only job is the
-nightly design import (02:00 Europe/Kyiv), which holds an in-process run lock
-and is disabled with `DESIGN_IMPORT_ENABLED=false`.
+executes them; a job must tolerate that or guard itself. The jobs are:
+
+- the nightly design import (02:00 Europe/Kyiv), which holds an in-process
+  run lock and is disabled with `DESIGN_IMPORT_ENABLED=false`;
+- the market rate refresh (06:00 Europe/Kyiv), which stores NBU rates and
+  reprices auto-priced products in one transaction; running it twice only
+  repeats the same idempotent update.
 
 ## Payments
 
@@ -292,7 +301,7 @@ Unit tests (`*.spec.ts` next to the code) cover pure business logic such as
 pricing, order transitions, and signatures. End-to-end tests in `test/` boot the
 full application against an in-process PGlite Postgres database with the real
 migrations and seed applied. Supabase, Telegram Gateway, TurboSMS, Nova
-Poshta, and (where needed) Sketchfab and Cloudinary are replaced with test
+Poshta, and (where needed) Sketchfab, Cloudinary, and NBU are replaced with test
 doubles; no network access or Docker is needed.
 PGlite requires Node's `--experimental-vm-modules` flag, which the
 `test:e2e` script sets.

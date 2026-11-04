@@ -9,7 +9,13 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type {
+  MetalPricingProfile,
+  SettingType,
+  StoneCut,
+} from '../../../modules/pricing/pricing.settings';
 import { appSchema, ImageAsset, timestamps } from './common.schema';
+import type { ProductPricing } from './pricing.schema';
 
 export const PUBLICATION_STATUSES = ['draft', 'published', 'archived'] as const;
 export type PublicationStatus = (typeof PUBLICATION_STATUSES)[number];
@@ -84,6 +90,8 @@ export const metals = appSchema.table('metals', {
   color: text('color'),
   /** Kopiykas per gram; `null` leaves the metal out of automatic pricing. */
   pricePerGram: integer('price_per_gram'),
+  /** Workshop tariffs of the metal; `null` uses the defaults for its family. */
+  pricingProfile: jsonb('pricing_profile').$type<MetalPricingProfile>(),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
   ...timestamps,
@@ -184,6 +192,8 @@ export const products = appSchema.table(
     collectionSortOrder: integer('collection_sort_order').notNull().default(0),
     seoTitle: text('seo_title'),
     seoDescription: text('seo_description'),
+    /** Price calculator inputs; `null` means prices are entered by hand. */
+    pricing: jsonb('pricing').$type<ProductPricing>(),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     ...timestamps,
   },
@@ -273,6 +283,12 @@ export const productStones = appSchema.table(
     quantity: integer('quantity').notNull().default(1),
     /** Kopiykas per stone, setting included. */
     unitPrice: integer('unit_price').notNull().default(0),
+    /** Purchase price per stone for the calculator, kopiykas. */
+    purchasePrice: integer('purchase_price'),
+    settingType: text('setting_type').$type<SettingType>(),
+    cut: text('cut').$type<StoneCut>(),
+    /** Paid per stone to a hired or outside setter, kopiykas. */
+    settingCost: integer('setting_cost').notNull().default(0),
     sortOrder: integer('sort_order').notNull().default(0),
     ...timestamps,
   },

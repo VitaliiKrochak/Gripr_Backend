@@ -81,6 +81,10 @@ async function saveStones(
       carat: stone.carat ?? null,
       quantity: stone.quantity,
       unitPrice: stone.unitPrice,
+      purchasePrice: stone.purchasePrice ?? null,
+      settingType: stone.settingType ?? null,
+      cut: stone.cut ?? null,
+      settingCost: stone.settingCost ?? 0,
       sortOrder: index,
     };
     kept.push(await upsert(tx, productStones, current, stone.id, row));

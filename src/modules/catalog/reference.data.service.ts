@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, getTableColumns } from 'drizzle-orm';
 import { DATABASE } from '../../integrations/database/database.client';
 import type { Database } from '../../integrations/database/database.client';
 import {
@@ -23,7 +23,12 @@ import type {
   UpdateMetalDto,
   UpdateTagDto,
 } from './dto/reference.dto';
-import { productsWithMetal, refreshPriceFrom } from './product.pricing';
+import { ProductPricingService } from '../pricing/product.pricing.service';
+import { productsWithMetal } from './product.pricing';
+
+/** Metal columns without the workshop tariffs, which stay in the pricing module. */
+const { pricingProfile: _pricingProfile, ...metalColumns } =
+  getTableColumns(metals);
 
 function found<T>(row: T | undefined, message: string): T {
   if (!row) {
@@ -36,11 +41,14 @@ function found<T>(row: T | undefined, message: string): T {
 /** Metals, gemstones, finishing options, and tags managed by administrators. */
 @Injectable()
 export class ReferenceDataService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly productPricing: ProductPricingService,
+  ) {}
 
   listMetals(activeOnly = false): Promise<MetalDto[]> {
     return this.db
-      .select()
+      .select(metalColumns)
       .from(metals)
       .where(activeOnly ? eq(metals.isActive, true) : undefined)
       .orderBy(asc(metals.sortOrder), asc(metals.name));
@@ -48,7 +56,7 @@ export class ReferenceDataService {
 
   async createMetal(dto: CreateMetalDto): Promise<MetalDto> {
     const [row] = await withConflictMapping(
-      this.db.insert(metals).values(dto).returning(),
+      this.db.insert(metals).values(dto).returning(metalColumns),
       { unique: 'Metal code already exists' },
     );
     return row;
@@ -61,10 +69,18 @@ export class ReferenceDataService {
           .update(metals)
           .set(dto)
           .where(eq(metals.id, id))
-          .returning();
+          .returning(metalColumns);
 
-        if (updated && dto.pricePerGram !== undefined) {
-          await refreshPriceFrom(tx, productsWithMetal(tx, id));
+        if (
+          updated &&
+          (dto.pricePerGram !== undefined ||
+            dto.family !== undefined ||
+            dto.purity !== undefined)
+        ) {
+          await this.productPricing.refreshPrices(
+            tx,
+            productsWithMetal(tx, id),
+          );
         }
 
         return updated;

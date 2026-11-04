@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PricingModule } from '../pricing/pricing.module';
 import { AdminCollectionsController } from './admin/collections.controller';
 import { AdminFinishingOptionsController } from './admin/finishing.options.controller';
 import { AdminGemstonesController } from './admin/gemstones.controller';
@@ -13,6 +14,7 @@ import { ProductsService } from './products.service';
 import { ReferenceDataService } from './reference.data.service';
 
 @Module({
+  imports: [PricingModule],
   controllers: [
     AdminMetalsController,
     AdminGemstonesController,

@@ -6,4 +6,5 @@ export * from './schema/production.schema';
 export * from './schema/custom.requests.schema';
 export * from './schema/designs.schema';
 export * from './schema/messages.schema';
+export * from './schema/pricing.schema';
 export * from './schema/relations.schema';

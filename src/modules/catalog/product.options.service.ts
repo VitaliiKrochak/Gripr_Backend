@@ -31,7 +31,7 @@ import type {
   UpdateOptionValueDto,
 } from './dto/product.dto';
 import { defaultGroupName, valueLabel } from './product.labels';
-import { refreshPriceFrom } from './product.pricing';
+import { ProductPricingService } from '../pricing/product.pricing.service';
 
 const MISSING_REFERENCE =
   'Referenced metal, gemstone, or operation does not exist';
@@ -42,7 +42,10 @@ const MISSING_REFERENCE =
  */
 @Injectable()
 export class ProductOptionsService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    private readonly productPricing: ProductPricingService,
+  ) {}
 
   async createGroup(
     productId: string,
@@ -79,7 +82,7 @@ export class ProductOptionsService {
         })
         .where(this.groupWhere(productId, groupId))
         .returning();
-      await refreshPriceFrom(tx, eq(products.id, productId));
+      await this.productPricing.refreshPrices(tx, eq(products.id, productId));
       return updated;
     });
 
@@ -96,7 +99,7 @@ export class ProductOptionsService {
         .delete(optionGroups)
         .where(this.groupWhere(productId, groupId))
         .returning({ id: optionGroups.id });
-      await refreshPriceFrom(tx, eq(products.id, productId));
+      await this.productPricing.refreshPrices(tx, eq(products.id, productId));
       return deleted;
     });
 
@@ -120,7 +123,7 @@ export class ProductOptionsService {
           .values({ ...dto, label, groupId })
           .returning();
         await this.keepSingleDefault(tx, value);
-        await refreshPriceFrom(tx, eq(products.id, productId));
+        await this.productPricing.refreshPrices(tx, eq(products.id, productId));
         return value;
       }),
       { inUse: MISSING_REFERENCE },
@@ -158,7 +161,7 @@ export class ProductOptionsService {
           .where(eq(optionValues.id, valueId))
           .returning();
         await this.keepSingleDefault(tx, updated);
-        await refreshPriceFrom(tx, eq(products.id, productId));
+        await this.productPricing.refreshPrices(tx, eq(products.id, productId));
         return updated;
       }),
       { inUse: MISSING_REFERENCE },
@@ -185,7 +188,7 @@ export class ProductOptionsService {
           and(eq(optionValues.id, valueId), eq(optionValues.groupId, groupId)),
         )
         .returning({ id: optionValues.id });
-      await refreshPriceFrom(tx, eq(products.id, productId));
+      await this.productPricing.refreshPrices(tx, eq(products.id, productId));
       return deleted;
     });
 
