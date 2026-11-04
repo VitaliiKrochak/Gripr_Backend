@@ -1,0 +1,1 @@
+ALTER TABLE "app"."option_values" ADD COLUMN "price_per_gram" integer;

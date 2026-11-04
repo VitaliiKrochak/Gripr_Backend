@@ -130,7 +130,10 @@ calculation, size weight changes are charged through the price per gram, and
 other option surcharges stay on top. The preview returns stone choice
 surcharges as `optionPrices` (`groupIndex`, `valueIndex`, `priceDelta`). A metal without
 a market price keeps being charged by its entered price per gram on top of
-the calculated work (warning `missing_market_price`).
+the calculated work (warning `missing_market_price`). Metal surcharges are
+always planned with the metal's own price per gram, so a product-level
+`pricePerGram` on a metal value changes that metal's price by the difference
+× weight.
 
 Auto-priced products are repriced on every product or option save, metal
 change, settings change, rate change, and nightly with the rate refresh.

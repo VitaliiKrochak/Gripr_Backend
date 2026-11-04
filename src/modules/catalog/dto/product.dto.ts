@@ -129,6 +129,15 @@ export class CreateOptionValueDto {
   @IsUUID()
   finishingId?: string | null;
 
+  /**
+   * Customer price per gram of the metal on this product, in kopiykas;
+   * `null` uses the price of the metal. Only for metal choices.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pricePerGram?: number | null;
+
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -497,6 +506,8 @@ export class OptionValueDto {
   metal: MetalDto | null;
   gemstone: GemstoneDto | null;
   finishing: FinishingOptionDto | null;
+  /** Price per gram of the metal on this product; `null` uses the metal price. */
+  pricePerGram: number | null;
   stoneCarat: number | null;
   stoneSizeMm: number | null;
   stoneQuantity: number;

@@ -249,6 +249,11 @@ export const optionValues = appSchema.table(
     finishingId: uuid('finishing_id').references(() => finishingOptions.id, {
       onDelete: 'restrict',
     }),
+    /**
+     * Customer price per gram of the metal on this product, kopiykas; `null`
+     * uses the price of the metal.
+     */
+    pricePerGram: integer('price_per_gram'),
     stoneCarat: real('stone_carat'),
     stoneSizeMm: real('stone_size_mm'),
     /** Stones in this choice, for the price calculator. */

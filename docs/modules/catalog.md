@@ -124,6 +124,9 @@ An option group has a `kind` (`metal`, `stone`, `size`, `engraving`,
 Values carry a label and, depending on the kind, `metalId`, `gemstoneId`,
 `stoneCarat`, `stoneSizeMm`, `sizeValue`, or `finishingId` (a finishing
 option of the same kind), plus `priceDelta` (kopiykas, may be negative),
+`pricePerGram` on metal values (the metal's customer price per gram on this
+product; `null` uses the metal's own price, and other kinds always store
+`null`),
 the stone calculator inputs `stoneQuantity`, `purchasePrice`, `settingType`,
 `cut`, and `settingCost` (used for `stone` groups of automatically priced
 products; never shown on the storefront),
@@ -143,7 +146,8 @@ Option mutations return the full product.
 The configured unit price is the sum of:
 
 - manufacturing: `basePrice`;
-- metal: the selected metal's `pricePerGram` × (`weightGrams` + the
+- metal: the price per gram of the selected metal value (its own
+  `pricePerGram`, else the metal's) × (`weightGrams` + the
   `weightDeltaGrams` of the selected values), when both are set;
 - stones: `quantity` × `unitPrice` of every stone group;
 - options: the `priceDelta` of every selected value.
@@ -159,7 +163,10 @@ default (manufacturing plus stones when a required group has no available
 value). The storefront `defaultQuote` uses the same selection, while quotes
 and the cart still require an explicit default or selection. The staff
 editor offers stones only as `stone` option values, so a configuration's
-stones are part of the selected options. It is stored on the product,
+stones are part of the selected options. Each `stone` group is one stone
+place of the piece (for example a centre stone and side stones); every value
+of the group stores the place's `stoneQuantity` and `stoneSizeMm`, and its
+`priceDelta` is the price of all stones of that place. It is stored on the product,
 recomputed whenever the product, its options, or a metal price changes, and
 used for cards, price filters, and sorting. Products without a weight or
 metal price per gram keep their previous prices.

@@ -43,6 +43,13 @@
       "when": 1793811203810,
       "tag": "0005_stone_option_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793821266977,
+      "tag": "0006_metal_price_per_gram_override",
+      "breakpoints": true
     }
   ]
 }

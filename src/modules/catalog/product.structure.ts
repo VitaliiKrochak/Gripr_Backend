@@ -178,6 +178,7 @@ async function saveOptionGroups(
           metalId: value.metalId ?? null,
           gemstoneId: value.gemstoneId ?? null,
           finishingId: value.finishingId ?? null,
+          pricePerGram: value.metalId ? (value.pricePerGram ?? null) : null,
           stoneCarat: value.stoneCarat ?? null,
           stoneSizeMm: value.stoneSizeMm ?? null,
           stoneQuantity: value.stoneQuantity ?? 1,

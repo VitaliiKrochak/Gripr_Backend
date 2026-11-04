@@ -239,6 +239,45 @@ describe('Product pricing, drafts, and collections (e2e)', () => {
       .get('/api/storefront/products?q=Nova')
       .expect(200);
     expect(card.body.items[0].priceFrom).toBe(150_000 + 1_000_000);
+
+    const ownPrice = await request(server())
+      .patch(`/api/products/${created.body.id}`)
+      .set('Cookie', admin)
+      .send({
+        optionGroups: [
+          {
+            id: metalGroupId,
+            kind: 'metal',
+            isRequired: true,
+            values: [
+              { metalId: gold.id },
+              {
+                id: silverValueId,
+                metalId: silver.id,
+                isDefault: true,
+                pricePerGram: 8_000,
+              },
+            ],
+          },
+          {
+            kind: 'stone',
+            values: [{ gemstoneId: gemstones[0].id, pricePerGram: 1 }],
+          },
+        ],
+      })
+      .expect(200);
+    expect(ownPrice.body.optionGroups[0].values[1]).toMatchObject({
+      id: silverValueId,
+      pricePerGram: 8_000,
+    });
+    expect(ownPrice.body.optionGroups[1].values[0].pricePerGram).toBeNull();
+    expect(ownPrice.body.priceFrom).toBe(150_000 + 32_000);
+
+    const silverQuote = await request(server())
+      .post('/api/storefront/products/nova-chain/quote')
+      .send({ optionValueIds: [silverValueId] })
+      .expect(200);
+    expect(silverQuote.body.breakdown.metal).toBe(32_000);
   });
 
   it('manages finishing options as reference data', async () => {

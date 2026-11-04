@@ -14,6 +14,8 @@ export interface ConfigurableValue {
   isAvailable: boolean;
   /** Extra metal in grams, e.g. for a larger size. */
   weightDeltaGrams?: number;
+  /** Price per gram of the metal on this product; wins over the metal price. */
+  pricePerGram?: number | null;
   metal?: { pricePerGram: number | null } | null;
 }
 
@@ -202,8 +204,10 @@ function priceBreakdown(
           ),
         );
   const pricePerGram =
-    selected.find((value) => value.metal?.pricePerGram != null)?.metal
-      ?.pricePerGram ?? 0;
+    selected
+      .filter((value) => value.metal)
+      .map((value) => value.pricePerGram ?? value.metal?.pricePerGram)
+      .find((price) => price != null) ?? 0;
 
   return {
     manufacturing: product.basePrice,

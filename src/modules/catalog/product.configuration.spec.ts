@@ -234,6 +234,23 @@ describe('weight-based pricing', () => {
     expect(defaultSelection(product)).toEqual(['gold', 'zirconia']);
     expect(priceFrom(product)).toBe(200_000 + 1_200_000 + 80_000 + 30_000);
   });
+
+  it('charges the price per gram set on the product over the metal price', () => {
+    const product: ConfigurableProduct = {
+      ...chain,
+      optionGroups: [
+        {
+          ...chain.optionGroups[0],
+          values: chain.optionGroups[0].values.map((v) =>
+            v.id === 'silver' ? { ...v, pricePerGram: 8_000 } : v,
+          ),
+        },
+      ],
+    };
+
+    expect(configureProduct(product, ['silver']).breakdown.metal).toBe(32_000);
+    expect(configureProduct(product, ['gold']).breakdown.metal).toBe(1_200_000);
+  });
 });
 
 describe('applySetDiscounts', () => {
