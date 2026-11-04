@@ -72,4 +72,5 @@ facts.
 
 A card contains the slug, name, type, flags, `priceFrom` (the price with
 default options, in kopiykas), `inStock`, up to two images, the available
-metals, and the collection summary.
+metals (`code`, `name`, and the display `color` for swatches, or `null`), and
+the collection summary.

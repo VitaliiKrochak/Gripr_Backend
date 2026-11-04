@@ -187,9 +187,9 @@ export class ProductCatalogService {
         ) i
       ), '[]'::json)`,
       metals: sql<ProductCardDto['metals']>`coalesce((
-        select json_agg(json_build_object('code', m.code, 'name', m.name) order by m.sort_order)
+        select json_agg(json_build_object('code', m.code, 'name', m.name, 'color', m.color) order by m.sort_order)
         from (
-          select distinct ${metals.code} as code, ${metals.name} as name, ${metals.sortOrder} as sort_order
+          select distinct ${metals.code} as code, ${metals.name} as name, ${metals.color} as color, ${metals.sortOrder} as sort_order
           from ${optionValues}
           inner join ${optionGroups} on ${optionGroups.id} = ${optionValues.groupId}
           inner join ${metals} on ${metals.id} = ${optionValues.metalId}

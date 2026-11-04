@@ -16,6 +16,9 @@ export class ProductCardImageDto {
 export class ProductCardMetalDto {
   code: string;
   name: string;
+  /** Display colour of the metal (CSS colour), when set in reference data. */
+  @ApiProperty({ type: String, nullable: true })
+  color: string | null;
 }
 
 export class ProductCardCollectionDto {

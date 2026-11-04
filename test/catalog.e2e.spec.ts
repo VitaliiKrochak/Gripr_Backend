@@ -153,8 +153,16 @@ describe('Catalog administration and storefront (e2e)', () => {
         images: [{ alt: 'Каблучка Aurora' }],
       });
       expect(platinum.body.items[0].metals).toEqual([
-        { code: 'gold-585-yellow', name: 'Жовте золото 585' },
-        { code: 'platinum-950', name: 'Платина 950' },
+        {
+          code: 'gold-585-yellow',
+          name: 'Жовте золото 585',
+          color: expect.any(String),
+        },
+        {
+          code: 'platinum-950',
+          name: 'Платина 950',
+          color: expect.any(String),
+        },
       ]);
 
       const inStock = await request(server())
