@@ -153,8 +153,13 @@ the product range plus the `productionDaysDelta` of the selected values.
 Required groups fall back to their default value; at most one value per group
 can be selected, and the price cannot become negative.
 
-`priceFrom` is the price of the default configuration (manufacturing plus
-stones when a required group has no default). It is stored on the product,
+`priceFrom` is the price of the default configuration: the default value of
+every required group, or its first available value when none is marked as
+default (manufacturing plus stones when a required group has no available
+value). The storefront `defaultQuote` uses the same selection, while quotes
+and the cart still require an explicit default or selection. The staff
+editor offers stones only as `stone` option values, so a configuration's
+stones are part of the selected options. It is stored on the product,
 recomputed whenever the product, its options, or a metal price changes, and
 used for cards, price filters, and sorting. Products without a weight or
 metal price per gram keep their previous prices.

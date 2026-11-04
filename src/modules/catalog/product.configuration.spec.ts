@@ -4,6 +4,7 @@ import {
   ConfigurableProduct,
   configureProduct,
   ConfigurationError,
+  defaultSelection,
   priceFrom,
 } from './product.configuration';
 
@@ -204,6 +205,34 @@ describe('weight-based pricing', () => {
         ],
       }),
     ).toBe(280_000);
+  });
+
+  it('uses the first available value of a required group without a default', () => {
+    const product: ConfigurableProduct = {
+      ...chain,
+      optionGroups: [
+        {
+          ...chain.optionGroups[0],
+          values: chain.optionGroups[0].values.map((v) => ({
+            ...v,
+            isDefault: false,
+          })),
+        },
+        {
+          id: 'stone',
+          name: 'Камінь',
+          kind: 'stone',
+          isRequired: true,
+          values: [
+            value('diamond', 900_000, { isAvailable: false }),
+            value('zirconia', 30_000),
+          ],
+        },
+      ],
+    };
+
+    expect(defaultSelection(product)).toEqual(['gold', 'zirconia']);
+    expect(priceFrom(product)).toBe(200_000 + 1_200_000 + 80_000 + 30_000);
   });
 });
 

@@ -218,12 +218,25 @@ function priceBreakdown(
 }
 
 /**
+ * Values of the default configuration: the default of every required group,
+ * or its first available value when none is marked as default.
+ */
+export function defaultSelection(product: ConfigurableProduct): string[] {
+  return product.optionGroups.flatMap((group) => {
+    const available = group.values.filter((value) => value.isAvailable);
+    const preset = available.find((value) => value.isDefault);
+
+    return group.isRequired && !preset && available[0] ? [available[0].id] : [];
+  });
+}
+
+/**
  * Price shown on product cards: the default configuration, or the fixed
  * parts of the price when the product has no complete default.
  */
 export function priceFrom(product: ConfigurableProduct): number {
   try {
-    return configureProduct(product, []).unitPrice;
+    return configureProduct(product, defaultSelection(product)).unitPrice;
   } catch (error) {
     if (!(error instanceof ConfigurationError)) {
       throw error;

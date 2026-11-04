@@ -43,6 +43,7 @@ import {
 import {
   configureProduct,
   ConfigurationError,
+  defaultSelection,
 } from '../catalog/product.configuration';
 import {
   defaultProductOrder,
@@ -357,7 +358,7 @@ export class StorefrontService {
     let defaultQuote: QuoteDto | null = null;
 
     try {
-      defaultQuote = configureProduct(product, []);
+      defaultQuote = configureProduct(product, defaultSelection(product));
     } catch {
       defaultQuote = null;
     }
