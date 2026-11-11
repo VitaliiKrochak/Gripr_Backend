@@ -7,6 +7,7 @@ import { LiqPayModule } from './integrations/liqpay/liqpay.module';
 import { NbuModule } from './integrations/nbu/nbu.module';
 import { NovaPoshtaModule } from './integrations/novaposhta/novaposhta.module';
 import { SketchfabModule } from './integrations/sketchfab/sketchfab.module';
+import { ThingiverseModule } from './integrations/thingiverse/thingiverse.module';
 import { SupabaseModule } from './integrations/supabase/supabase.module';
 import { TelegramModule } from './integrations/telegram/telegram.module';
 import { TurboSmsModule } from './integrations/turbosms/turbosms.module';
@@ -24,6 +25,7 @@ import { MediaModule } from './modules/media/media.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PrintsModule } from './modules/prints/prints.module';
 import { ProductionModule } from './modules/production/production.module';
 import { StorefrontModule } from './modules/storefront/storefront.module';
 import { AuthGuard } from './shared/guards/auth.guard';
@@ -39,12 +41,14 @@ import { AuthGuard } from './shared/guards/auth.guard';
     LiqPayModule,
     NovaPoshtaModule,
     SketchfabModule,
+    ThingiverseModule,
     NbuModule,
     HealthModule,
     AuthModule,
     CustomersModule,
     MediaModule,
     CatalogModule,
+    PrintsModule,
     StorefrontModule,
     FavoritesModule,
     CartModule,

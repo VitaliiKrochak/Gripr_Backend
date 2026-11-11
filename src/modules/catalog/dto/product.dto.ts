@@ -12,6 +12,7 @@ import {
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -21,18 +22,24 @@ import {
   PRODUCT_AVAILABILITIES,
   PRODUCT_TYPES,
   PUBLICATION_STATUSES,
+  STORES,
 } from '../../../integrations/database/database.schema';
 import type {
   OptionGroupKind,
   ProductAvailability,
   ProductType,
   PublicationStatus,
+  Store,
 } from '../../../integrations/database/database.schema';
-import { PaginationQueryDto } from '../../../shared/pagination/pagination.query.dto';
+import { StorePageQueryDto } from '../../../shared/store/store.query.dto';
 import { DesignCreditDto } from '../../designs/dto/design.credit.dto';
 import { ProductPricingDto } from '../../pricing/dto/product.pricing.dto';
 import { SETTING_TYPES, STONE_CUTS } from '../../pricing/pricing.settings';
 import type { SettingType, StoneCut } from '../../pricing/pricing.settings';
+import { ProductPrintDto } from '../../prints/dto/product.print.dto';
+import { ResinDto } from '../../prints/dto/resin.dto';
+import { PRINT_FINISHES } from '../../prints/print.settings';
+import type { PrintFinish } from '../../prints/print.settings';
 import {
   SLUG_MESSAGE,
   SLUG_PATTERN,
@@ -190,7 +197,42 @@ export class CreateOptionValueDto {
   @IsNumber()
   weightDeltaGrams?: number;
 
-  /** Added to the price, in kopiykas. May be negative. */
+  /** Lab `scale`: finished height in mm; wins over `scaleFactor`. */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(2000)
+  heightMm?: number | null;
+
+  /** Lab `scale`: factor of the reference model, e.g. 0.5 or 2. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  @Max(100)
+  scaleFactor?: number | null;
+
+  /** Lab `resin`: the resin printed with. */
+  @IsOptional()
+  @IsUUID()
+  resinId?: string | null;
+
+  /** Lab `painting`: multiplier of the unpainted price (1 = unpainted). */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  paintingMultiplier?: number | null;
+
+  /** Lab `finish`: how far the print is cleaned up. */
+  @ApiProperty({ enum: PRINT_FINISHES, required: false, nullable: true })
+  @IsOptional()
+  @IsIn(PRINT_FINISHES)
+  printFinish?: PrintFinish | null;
+
+  /**
+   * Added to the price, in kopiykas. May be negative. For print-priced Lab
+   * products it is added to the cost before the markup (e.g. a base).
+   */
   @IsOptional()
   @IsInt()
   priceDelta?: number;
@@ -318,6 +360,11 @@ export class CreateProductDto {
   @MaxLength(150)
   name: string;
 
+  /**
+   * Jewelry types belong to Gripr and print types to Gripr Lab; the type
+   * decides the product's store, and an update cannot move it to the other
+   * store.
+   */
   @ApiProperty({ enum: PRODUCT_TYPES })
   @IsIn(PRODUCT_TYPES)
   type: ProductType;
@@ -462,11 +509,22 @@ export class CreateProductDto {
   @ValidateNested()
   @Type(() => ProductPricingDto)
   pricing?: ProductPricingDto | null;
+
+  /**
+   * Print calculator inputs of a Lab product. In `auto` mode every selection
+   * is priced by the print calculator and the production time comes from
+   * the print settings; `null` or `manual` adds up option surcharges.
+   */
+  @ApiProperty({ type: ProductPrintDto, required: false, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ProductPrintDto)
+  print?: ProductPrintDto | null;
 }
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
 
-export class AdminProductListQueryDto extends PaginationQueryDto {
+export class AdminProductListQueryDto extends StorePageQueryDto {
   @ApiProperty({ enum: PUBLICATION_STATUSES, required: false })
   @IsOptional()
   @IsIn(PUBLICATION_STATUSES)
@@ -519,6 +577,14 @@ export class OptionValueDto {
   settingCost: number;
   sizeValue: number | null;
   weightDeltaGrams: number;
+  heightMm: number | null;
+  scaleFactor: number | null;
+  resinId: string | null;
+  @ApiProperty({ type: ResinDto, nullable: true })
+  resin: ResinDto | null;
+  paintingMultiplier: number | null;
+  @ApiProperty({ enum: PRINT_FINISHES, nullable: true })
+  printFinish: PrintFinish | null;
   priceDelta: number;
   productionDaysDelta: number;
   isDefault: boolean;
@@ -572,6 +638,8 @@ export class ProductCollectionSummaryDto {
 
 export class AdminProductListItemDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   slug: string;
   name: string;
   @ApiProperty({ enum: PRODUCT_TYPES })
@@ -602,6 +670,8 @@ export class AdminProductPageDto {
 
 export class AdminProductDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   slug: string;
   name: string;
   @ApiProperty({ enum: PRODUCT_TYPES })
@@ -643,4 +713,6 @@ export class AdminProductDto {
   designCredit: DesignCreditDto | null;
   @ApiProperty({ type: ProductPricingDto, nullable: true })
   pricing: ProductPricingDto | null;
+  @ApiProperty({ type: ProductPrintDto, nullable: true })
+  print: ProductPrintDto | null;
 }

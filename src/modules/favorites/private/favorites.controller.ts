@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Put,
+  Query,
 } from '@nestjs/common';
 import {
   ApiCookieAuth,
@@ -17,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import { CurrentUser } from '../../../shared/decorators/current.user.decorator';
+import { StoreQueryDto } from '../../../shared/store/store.query.dto';
 import { ProductCardDto } from '../../catalog/dto/product.card.dto';
 import { FavoritesService } from '../favorites.service';
 
@@ -29,8 +31,11 @@ export class PrivateFavoritesController {
   @Get()
   @ApiOperation({ summary: 'List favorite products, newest first' })
   @ApiOkResponse({ type: [ProductCardDto] })
-  list(@CurrentUser() user: User): Promise<ProductCardDto[]> {
-    return this.favoritesService.list(user);
+  list(
+    @CurrentUser() user: User,
+    @Query() query: StoreQueryDto,
+  ): Promise<ProductCardDto[]> {
+    return this.favoritesService.list(user, query.store);
   }
 
   @Put(':productId')

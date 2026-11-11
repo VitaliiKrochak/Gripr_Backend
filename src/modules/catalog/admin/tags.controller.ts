@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -20,6 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminGuard } from '../../../shared/guards/admin.guard';
+import { StoreQueryDto } from '../../../shared/store/store.query.dto';
 import { CreateTagDto, TagDto, UpdateTagDto } from '../dto/reference.dto';
 import { ReferenceDataService } from '../reference.data.service';
 
@@ -31,10 +33,10 @@ export class AdminTagsController {
   constructor(private readonly referenceData: ReferenceDataService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all tags' })
+  @ApiOperation({ summary: 'List tags of a store' })
   @ApiOkResponse({ type: [TagDto] })
-  list(): Promise<TagDto[]> {
-    return this.referenceData.listTags();
+  list(@Query() query: StoreQueryDto): Promise<TagDto[]> {
+    return this.referenceData.listTags(query.store);
   }
 
   @Post()

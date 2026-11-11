@@ -2,10 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   PRODUCT_AVAILABILITIES,
   PRODUCT_TYPES,
+  STORES,
 } from '../../../integrations/database/database.schema';
 import type {
   ProductAvailability,
   ProductType,
+  Store,
 } from '../../../integrations/database/database.schema';
 
 export class ProductCardImageDto {
@@ -29,6 +31,8 @@ export class ProductCardCollectionDto {
 /** Compact product representation for grids, carousels, and favorites. */
 export class ProductCardDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   slug: string;
   name: string;
   @ApiProperty({ enum: PRODUCT_TYPES })

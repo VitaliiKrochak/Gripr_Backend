@@ -1,5 +1,6 @@
 import {
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -10,10 +11,11 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { products, productType } from './catalog.schema';
-import { appSchema, ImageAsset, timestamps } from './common.schema';
-import type { JewelrySpecification } from './common.schema';
+import { appSchema, ImageAsset, storeEnum, timestamps } from './common.schema';
+import type { JewelrySpecification, LabSpecification } from './common.schema';
 import { customers } from './customers.schema';
 import { orders, SelectedOption } from './orders.schema';
+import type { RevisionTerms } from './orders.schema';
 
 /**
  * `quoted` means a proposal was sent and `accepted` that it was approved;
@@ -58,6 +60,7 @@ export const customRequests = appSchema.table(
   'custom_requests',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    store: storeEnum('store').notNull().default('gripr'),
     customerId: uuid('customer_id')
       .notNull()
       .references(() => customers.id, { onDelete: 'restrict' }),
@@ -73,6 +76,7 @@ export const customRequests = appSchema.table(
       .$type<SelectedOption[]>()
       .notNull()
       .default([]),
+    /** A jewelry type for Gripr, a print type for Gripr Lab. */
     productType: productType('product_type').notNull(),
     description: text('description').notNull(),
     referenceImages: jsonb('reference_images')
@@ -83,6 +87,8 @@ export const customRequests = appSchema.table(
     budgetMax: integer('budget_max'),
     /** Original structured request; never changed after submission. */
     specification: jsonb('specification').$type<JewelrySpecification>(),
+    /** Gripr Lab: the model to design; never changed after submission. */
+    labSpecification: jsonb('lab_specification').$type<LabSpecification>(),
     desiredMetal: text('desired_metal'),
     ringSize: real('ring_size'),
     quoteTitle: text('quote_title'),
@@ -114,9 +120,13 @@ export const customProposals = appSchema.table(
     version: integer('version').notNull(),
     status: proposalStatus('status').notNull().default('sent'),
     title: text('title').notNull(),
-    specification: jsonb('specification')
-      .$type<JewelrySpecification>()
-      .notNull(),
+    /** Gripr proposals; Gripr Lab proposals use `labSpecification`. */
+    specification: jsonb('specification').$type<JewelrySpecification>(),
+    labSpecification: jsonb('lab_specification').$type<LabSpecification>(),
+    /** Gripr Lab: modeling hours `modelPrice` was calculated from. */
+    modelingHours: doublePrecision('modeling_hours'),
+    /** Gripr Lab: revisions included in the price and the price of more. */
+    revisionTerms: jsonb('revision_terms').$type<RevisionTerms>(),
     requiresModel: boolean('requires_model').notNull().default(true),
     /** 3D modeling price in kopiykas, paid as the first prepayment. */
     modelPrice: integer('model_price').notNull().default(0),

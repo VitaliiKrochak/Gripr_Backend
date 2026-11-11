@@ -1,4 +1,7 @@
-import type { DesignIpRisk } from '../../integrations/database/database.schema';
+import type {
+  DesignIpRisk,
+  Store,
+} from '../../integrations/database/database.schema';
 
 export interface IpSubject {
   title: string;
@@ -62,6 +65,55 @@ const BLOCKED_TERMS = [
   'hello kitty',
   'transformers',
   'warhammer',
+  'games workshop',
+  'space marine',
+  'space marines',
+  'age of sigmar',
+  'adeptus',
+  'dungeons and dragons',
+  'dungeons dragons',
+  'beholder',
+  'mind flayer',
+  'illithid',
+  'displacer beast',
+  'drizzt',
+  'baldurs gate',
+  'critical role',
+  'magic the gathering',
+  'yu-gi-oh',
+  'yugioh',
+  'star trek',
+  'xenomorph',
+  'godzilla',
+  'gundam',
+  'evangelion',
+  'goku',
+  'luffy',
+  'demon slayer',
+  'attack on titan',
+  'jujutsu kaisen',
+  'my hero academia',
+  'genshin',
+  'hollow knight',
+  'halo master chief',
+  'master chief',
+  'world of warcraft',
+  'warcraft',
+  'stranger things',
+  'lego',
+  'hasbro',
+  'gandalf',
+  'frodo',
+  'shrek',
+  'simpsons',
+  'frozen elsa',
+  'groot',
+  'deadpool',
+  'wolverine',
+  'darth vader',
+  'yoda',
+  'grogu',
+  'baby yoda',
   'skyrim',
   'elder scrolls',
   'assassins creed',
@@ -103,13 +155,33 @@ const REVIEW_TERMS = [
 
 function normalize(value: string): string {
   return ` ${value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[’']/g, '')
     .replace(/[^\p{L}\p{N}-]+/gu, ' ')} `;
 }
 
+/**
+ * Generic tabletop words that are normal for printed miniatures but suggest a
+ * fan copy elsewhere; Gripr Lab reviews franchise-adjacent terms instead.
+ */
+const LAB_REVIEW_IGNORED = new Set(['game', 'badge', 'emblem', 'logo']);
+const LAB_REVIEW_TERMS = [
+  'dnd',
+  'd d',
+  'pathfinder',
+  '40k',
+  'grimdark',
+  'proxy',
+  'fan made',
+];
+
 /** Flags protected franchise/brand terms in the model's metadata. */
-export function assessIpRisk(subject: IpSubject): IpAssessment {
+export function assessIpRisk(
+  subject: IpSubject,
+  store: Store = 'gripr',
+): IpAssessment {
   const text = normalize(
     [subject.title, subject.tags.join(' '), subject.description ?? ''].join(
       ' ',
@@ -122,7 +194,14 @@ export function assessIpRisk(subject: IpSubject): IpAssessment {
 
   if (blocked.length > 0) return { risk: 'blocked', matches: blocked };
 
-  const review = find(REVIEW_TERMS);
+  const review = find(
+    store === 'lab'
+      ? [
+          ...REVIEW_TERMS.filter((term) => !LAB_REVIEW_IGNORED.has(term)),
+          ...LAB_REVIEW_TERMS,
+        ]
+      : REVIEW_TERMS,
+  );
 
   return review.length > 0
     ? { risk: 'review', matches: review }

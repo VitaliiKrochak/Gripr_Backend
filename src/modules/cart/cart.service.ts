@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { User } from '@supabase/supabase-js';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, inArray } from 'drizzle-orm';
 import { DATABASE } from '../../integrations/database/database.client';
 import type {
   Database,
@@ -16,6 +16,7 @@ import {
   collections,
   products,
 } from '../../integrations/database/database.schema';
+import type { Store } from '../../integrations/database/database.schema';
 import {
   ConfigurableProductRecord,
   isPublished,
@@ -26,6 +27,8 @@ import {
   ConfigurationError,
 } from '../catalog/product.configuration';
 import { CustomersService } from '../customers/customers.service';
+import { loadCartPrints } from '../prints/print.requests.cart';
+import type { CartPrint } from '../prints/print.requests.cart';
 import {
   AddCartItemDto,
   CartDto,
@@ -33,6 +36,11 @@ import {
   UpdateCartItemDto,
 } from './cart.dto';
 import { priceCart, PricedCart } from './cart.pricing';
+
+/** The priced cart with the confirmed Lab prints, which the totals include. */
+export type PricedStoreCart = PricedCart<ConfigurableProductRecord> & {
+  prints: CartPrint[];
+};
 
 @Injectable()
 export class CartService {
@@ -42,19 +50,27 @@ export class CartService {
     private readonly customers: CustomersService,
   ) {}
 
-  async get(user: User): Promise<CartDto> {
-    return this.toDto(await this.price(user.id));
+  async get(user: User, store: Store): Promise<CartDto> {
+    return this.toDto(store, await this.price(user.id, store));
   }
 
-  /** Prices the stored cart against the current catalog. */
+  /**
+   * Prices the stored cart against the current catalog. With `lock` the
+   * Lab prints are locked for checkout.
+   */
   async price(
     customerId: string,
+    store: Store,
     executor: DatabaseExecutor = this.db,
-  ): Promise<PricedCart<ConfigurableProductRecord>> {
+    { lock = false } = {},
+  ): Promise<PricedStoreCart> {
     const items = await executor
-      .select()
+      .select(getTableColumns(cartItems))
       .from(cartItems)
-      .where(eq(cartItems.customerId, customerId))
+      .innerJoin(products, eq(products.id, cartItems.productId))
+      .where(
+        and(eq(cartItems.customerId, customerId), eq(products.store, store)),
+      )
       .orderBy(asc(cartItems.createdAt));
     const productMap = await this.catalog.loadConfigurable(
       [...new Set(items.map((item) => item.productId))],
@@ -65,7 +81,13 @@ export class CartService {
       executor,
     );
 
-    return priceCart(items, productMap, sets);
+    const cart = priceCart(items, productMap, sets);
+    const prints =
+      store === 'lab'
+        ? await loadCartPrints(executor, customerId, { lock })
+        : [];
+
+    return withPrints(cart, prints);
   }
 
   async add(user: User, dto: AddCartItemDto): Promise<CartDto> {
@@ -113,7 +135,7 @@ export class CartService {
       });
     }
 
-    return this.get(user);
+    return this.get(user, product.store);
   }
 
   async update(
@@ -147,25 +169,41 @@ export class CartService {
         .where(eq(cartItems.id, item.id));
     }
 
-    return this.get(user);
+    return this.get(user, item.store);
   }
 
   async remove(user: User, itemId: string): Promise<CartDto> {
-    await this.findItem(user.id, itemId);
+    const item = await this.findItem(user.id, itemId);
     await this.db.delete(cartItems).where(eq(cartItems.id, itemId));
-    return this.get(user);
+    return this.get(user, item.store);
   }
 
-  async clear(customerId: string, executor: DatabaseExecutor = this.db) {
+  /** Removes the customer's lines of one store; the other store's stay. */
+  async clear(
+    customerId: string,
+    store: Store,
+    executor: DatabaseExecutor = this.db,
+  ) {
     await executor
       .delete(cartItems)
-      .where(eq(cartItems.customerId, customerId));
+      .where(
+        and(
+          eq(cartItems.customerId, customerId),
+          inArray(
+            cartItems.productId,
+            executor
+              .select({ id: products.id })
+              .from(products)
+              .where(eq(products.store, store)),
+          ),
+        ),
+      );
   }
 
   /** Adds one default-configured piece of every product in a set. */
   async addSet(user: User, collectionSlug: string): Promise<CartDto> {
     const rows = await this.db
-      .select({ id: products.id })
+      .select({ id: products.id, store: products.store })
       .from(products)
       .innerJoin(collections, eq(collections.id, products.collectionId))
       .where(
@@ -197,11 +235,12 @@ export class CartService {
       })),
     );
 
-    return this.get(user);
+    return this.get(user, rows[0].store);
   }
 
-  toDto(cart: PricedCart<ConfigurableProductRecord>): CartDto {
+  toDto(store: Store, cart: PricedStoreCart): CartDto {
     return {
+      store,
       items: cart.lines.map((line) => ({
         id: line.input.id,
         productId: line.input.productId,
@@ -220,6 +259,7 @@ export class CartService {
         fromStock: line.fromStock,
         unavailableReason: line.unavailableReason,
       })),
+      prints: cart.prints,
       subtotal: cart.subtotal,
       discount: cart.discount,
       total: cart.total,
@@ -259,8 +299,9 @@ export class CartService {
 
   private async findItem(customerId: string, itemId: string) {
     const [item] = await this.db
-      .select()
+      .select({ ...getTableColumns(cartItems), store: products.store })
       .from(cartItems)
+      .innerJoin(products, eq(products.id, cartItems.productId))
       .where(
         and(eq(cartItems.id, itemId), eq(cartItems.customerId, customerId)),
       );
@@ -271,6 +312,32 @@ export class CartService {
 
     return item;
   }
+}
+
+/** Adds the available prints to the totals; prints have no set discounts. */
+function withPrints(
+  cart: PricedCart<ConfigurableProductRecord>,
+  prints: CartPrint[],
+): PricedStoreCart {
+  const available = prints.filter((print) => !print.unavailableReason);
+  const printsTotal = available.reduce((sum, print) => sum + print.total, 0);
+
+  return {
+    ...cart,
+    prints,
+    subtotal: cart.subtotal + printsTotal,
+    total: cart.total + printsTotal,
+    productionDaysMin: Math.max(
+      cart.productionDaysMin,
+      ...available.map((print) => print.productionDaysMin),
+    ),
+    productionDaysMax: Math.max(
+      cart.productionDaysMax,
+      ...available.map((print) => print.productionDaysMax),
+    ),
+    hasUnavailableItems:
+      cart.hasUnavailableItems || available.length !== prints.length,
+  };
 }
 
 function sameIds(a: string[], b: string[]): boolean {

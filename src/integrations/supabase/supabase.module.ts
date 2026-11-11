@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { getSupabaseConfig, SUPABASE_CONFIG } from './supabase.config';
 import { SupabaseService } from './supabase.service';
+import { SupabaseStorageService } from './supabase.storage.service';
 
 @Global()
 @Module({
@@ -10,7 +11,8 @@ import { SupabaseService } from './supabase.service';
       useFactory: getSupabaseConfig,
     },
     SupabaseService,
+    SupabaseStorageService,
   ],
-  exports: [SupabaseService],
+  exports: [SupabaseService, SupabaseStorageService],
 })
 export class SupabaseModule {}

@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import { DATABASE } from '../../integrations/database/database.client';
 import type { Database } from '../../integrations/database/database.client';
 import { productionStages } from '../../integrations/database/database.schema';
+import type { Store } from '../../integrations/database/database.schema';
 import { withConflictMapping } from '../../shared/errors/conflict.mapping';
 import type {
   CreateProductionStageDto,
@@ -16,10 +17,11 @@ const DUPLICATE_CODE = 'A production stage with this code already exists';
 export class ProductionStagesService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
-  list(): Promise<ProductionStageDto[]> {
+  list(store: Store): Promise<ProductionStageDto[]> {
     return this.db
       .select()
       .from(productionStages)
+      .where(eq(productionStages.store, store))
       .orderBy(asc(productionStages.sortOrder), asc(productionStages.name));
   }
 

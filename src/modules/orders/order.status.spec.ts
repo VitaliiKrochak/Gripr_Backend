@@ -55,6 +55,21 @@ describe('assertTransition', () => {
     ],
     [{ status: 'in_production' }, 'awaiting_final_payment', 'fully paid'],
     [{ status: 'modeling' }, 'in_production', 'cannot move'],
+    [
+      { status: 'modeling', modelPaymentAmount: 300, paidAmount: 300 },
+      'awaiting_model_payment',
+      'Nothing more is due',
+    ],
+    [
+      { status: 'model_review', modelPaymentAmount: 300 },
+      'completed',
+      'model file',
+    ],
+    [
+      { status: 'model_review', modelPaymentAmount: 1000, paidAmount: 800 },
+      'completed',
+      'not fully paid',
+    ],
   ] as const)('rejects %j -> %s', (overrides, to, message) => {
     expect(() => assertTransition({ ...order, ...overrides }, to)).toThrow(
       OrderTransitionError,
@@ -91,6 +106,28 @@ describe('assertTransition', () => {
       assertTransition(
         { ...staged, status: 'in_production', paidAmount: 600 },
         'awaiting_final_payment',
+      ),
+    ).not.toThrow();
+  });
+
+  it('charges paid revisions and completes model file orders', () => {
+    const file = {
+      ...order,
+      total: 1300,
+      modelPaymentAmount: 1300,
+      productionPaymentAmount: 0,
+    };
+
+    expect(() =>
+      assertTransition(
+        { ...file, status: 'modeling', paidAmount: 1000 },
+        'awaiting_model_payment',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertTransition(
+        { ...file, status: 'model_review', paidAmount: 1300 },
+        'completed',
       ),
     ).not.toThrow();
   });

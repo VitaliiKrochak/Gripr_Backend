@@ -1,7 +1,12 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { LIQPAY_CONFIG } from './liqpay.config';
-import type { LiqPayConfig, LiqPaySignatureAlgorithm } from './liqpay.config';
+import { LIQPAY_CONFIG, LIQPAY_MERCHANTS } from './liqpay.config';
+import type {
+  LiqPayConfig,
+  LiqPayMerchant,
+  LiqPayMerchantConfig,
+  LiqPaySignatureAlgorithm,
+} from './liqpay.config';
 
 const CHECKOUT_URL = 'https://www.liqpay.ua/api/3/checkout';
 const API_VERSION = 7;
@@ -42,22 +47,31 @@ const FAILURE_STATUSES = new Set(['failure', 'error']);
 export class LiqPayService {
   constructor(@Inject(LIQPAY_CONFIG) private readonly config: LiqPayConfig) {}
 
+  isConfigured(merchant: LiqPayMerchant): boolean {
+    return this.config.merchants[merchant] !== null;
+  }
+
   /**
-   * Builds the `data`/`signature` pair the browser POSTs to `checkoutUrl`.
-   * `amount` is in kopiykas. When a receipt good is configured, LiqPay issues
-   * a fiscal receipt for `receipt` after a successful payment.
+   * Builds the `data`/`signature` pair the browser POSTs to `checkoutUrl`
+   * for the merchant's shop. `amount` is in kopiykas. When the shop has a
+   * receipt good, LiqPay issues a fiscal receipt for `receipt` after a
+   * successful payment.
    */
-  createCheckout(params: {
-    paymentId: string;
-    orderId: string;
-    amount: number;
-    description: string;
-    receipt: CheckoutReceipt;
-  }): LiqPayCheckout {
-    const goodId = this.config.receiptGoodId;
+  createCheckout(
+    merchant: LiqPayMerchant,
+    params: {
+      paymentId: string;
+      orderId: string;
+      amount: number;
+      description: string;
+      receipt: CheckoutReceipt;
+    },
+  ): LiqPayCheckout {
+    const shop = this.shop(merchant);
+    const goodId = shop.receiptGoodId;
     const payload = {
       version: API_VERSION,
-      public_key: this.config.publicKey,
+      public_key: shop.publicKey,
       action: 'pay',
       amount: params.amount / 100,
       currency: 'UAH',
@@ -88,31 +102,46 @@ export class LiqPayService {
     return {
       checkoutUrl: CHECKOUT_URL,
       data,
-      signature: this.sign(data, this.config.signatureAlgorithm),
+      signature: this.sign(data, this.config.signatureAlgorithm, merchant),
     };
   }
 
   /**
-   * Decodes a server callback. Returns `null` when the signature is invalid.
-   * Both signature algorithms are accepted while LiqPay migrates to SHA3-256.
+   * Decodes a server callback and tells which shop signed it. Returns `null`
+   * when no configured private key verifies the signature; the payload is
+   * not read before. Both signature algorithms are accepted while LiqPay
+   * migrates to SHA3-256.
    */
-  parseCallback(data: string, signature: string): LiqPayCallback | null {
+  parseCallback(
+    data: string,
+    signature: string,
+  ): { merchant: LiqPayMerchant; callback: LiqPayCallback } | null {
     const received = Buffer.from(signature, 'base64');
-    const valid = (['sha3-256', 'sha1'] as const).some((algorithm) => {
-      const expected = Buffer.from(this.sign(data, algorithm), 'base64');
-      return (
-        expected.length === received.length &&
-        timingSafeEqual(expected, received)
-      );
-    });
+    const merchant = LIQPAY_MERCHANTS.find(
+      (candidate) =>
+        this.isConfigured(candidate) &&
+        (['sha3-256', 'sha1'] as const).some((algorithm) => {
+          const expected = Buffer.from(
+            this.sign(data, algorithm, candidate),
+            'base64',
+          );
+          return (
+            expected.length === received.length &&
+            timingSafeEqual(expected, received)
+          );
+        }),
+    );
 
-    if (!valid) {
+    if (!merchant) {
       return null;
     }
 
-    return JSON.parse(
-      Buffer.from(data, 'base64').toString('utf8'),
-    ) as LiqPayCallback;
+    return {
+      merchant,
+      callback: JSON.parse(
+        Buffer.from(data, 'base64').toString('utf8'),
+      ) as LiqPayCallback,
+    };
   }
 
   /** Maps a LiqPay status to the payment outcome it represents. */
@@ -124,9 +153,25 @@ export class LiqPayService {
     return 'pending';
   }
 
-  sign(data: string, algorithm: LiqPaySignatureAlgorithm): string {
+  sign(
+    data: string,
+    algorithm: LiqPaySignatureAlgorithm,
+    merchant: LiqPayMerchant = 'gripr',
+  ): string {
+    const { privateKey } = this.shop(merchant);
+
     return createHash(algorithm)
-      .update(this.config.privateKey + data + this.config.privateKey)
+      .update(privateKey + data + privateKey)
       .digest('base64');
+  }
+
+  private shop(merchant: LiqPayMerchant): LiqPayMerchantConfig {
+    const shop = this.config.merchants[merchant];
+
+    if (!shop) {
+      throw new Error(`LiqPay shop "${merchant}" is not configured`);
+    }
+
+    return shop;
   }
 }

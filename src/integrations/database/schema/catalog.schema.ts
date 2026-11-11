@@ -14,13 +14,15 @@ import type {
   SettingType,
   StoneCut,
 } from '../../../modules/pricing/pricing.settings';
-import { appSchema, ImageAsset, timestamps } from './common.schema';
+import { appSchema, ImageAsset, storeEnum, timestamps } from './common.schema';
 import type { ProductPricing } from './pricing.schema';
+import { printFinish, resins } from './prints.schema';
+import type { ProductPrint } from './prints.schema';
 
 export const PUBLICATION_STATUSES = ['draft', 'published', 'archived'] as const;
 export type PublicationStatus = (typeof PUBLICATION_STATUSES)[number];
 
-export const PRODUCT_TYPES = [
+export const JEWELRY_PRODUCT_TYPES = [
   'ring',
   'earrings',
   'pendant',
@@ -30,6 +32,25 @@ export const PRODUCT_TYPES = [
   'brooch',
   'cufflinks',
   'other',
+] as const;
+export type JewelryProductType = (typeof JEWELRY_PRODUCT_TYPES)[number];
+
+export const LAB_PRODUCT_TYPES = [
+  'miniature',
+  'figurine',
+  'bust',
+  'statue',
+  'terrain',
+  'diorama',
+  'prop',
+  'other_print',
+] as const;
+export type LabProductType = (typeof LAB_PRODUCT_TYPES)[number];
+
+/** Every type belongs to exactly one store, which decides the product's store. */
+export const PRODUCT_TYPES = [
+  ...JEWELRY_PRODUCT_TYPES,
+  ...LAB_PRODUCT_TYPES,
 ] as const;
 export type ProductType = (typeof PRODUCT_TYPES)[number];
 
@@ -43,6 +64,11 @@ export const OPTION_GROUP_KINDS = [
   'engraving',
   'coating',
   'processing',
+  'scale',
+  'resin',
+  'painting',
+  'base',
+  'finish',
   'custom',
 ] as const;
 export type OptionGroupKind = (typeof OPTION_GROUP_KINDS)[number];
@@ -124,6 +150,7 @@ export const gemstones = appSchema.table('gemstones', {
 
 export const tags = appSchema.table('tags', {
   id: uuid('id').primaryKey().defaultRandom(),
+  store: storeEnum('store').notNull().default('gripr'),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   group: text('group'),
@@ -135,6 +162,7 @@ export const collections = appSchema.table(
   'collections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    store: storeEnum('store').notNull().default('gripr'),
     slug: text('slug').notNull().unique(),
     name: text('name').notNull(),
     subtitle: text('subtitle'),
@@ -151,13 +179,18 @@ export const collections = appSchema.table(
     publishedAt: timestamp('published_at', { withTimezone: true }),
     ...timestamps,
   },
-  (table) => [index('collections_status_idx').on(table.status)],
+  (table) => [
+    index('collections_status_idx').on(table.status),
+    index('collections_store_idx').on(table.store),
+  ],
 );
 
 export const products = appSchema.table(
   'products',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /** Follows from `type`; kept as a column for store-scoped queries. */
+    store: storeEnum('store').notNull().default('gripr'),
     slug: text('slug').notNull().unique(),
     name: text('name').notNull(),
     type: productType('type').notNull(),
@@ -194,11 +227,14 @@ export const products = appSchema.table(
     seoDescription: text('seo_description'),
     /** Price calculator inputs; `null` means prices are entered by hand. */
     pricing: jsonb('pricing').$type<ProductPricing>(),
+    /** Print calculator inputs of a Lab product; `null` for manual prices. */
+    print: jsonb('print').$type<ProductPrint>(),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     ...timestamps,
   },
   (table) => [
     index('products_status_idx').on(table.status),
+    index('products_store_idx').on(table.store),
     index('products_collection_idx').on(table.collectionId),
   ],
 );
@@ -268,6 +304,17 @@ export const optionValues = appSchema.table(
     sizeValue: real('size_value'),
     /** Extra metal in grams when the value is selected (e.g. a larger size). */
     weightDeltaGrams: real('weight_delta_grams').notNull().default(0),
+    /** Lab `scale`: finished height in mm, or a factor of the reference model. */
+    heightMm: real('height_mm'),
+    scaleFactor: real('scale_factor'),
+    /** Lab `resin`: the resin printed with. */
+    resinId: uuid('resin_id').references(() => resins.id, {
+      onDelete: 'restrict',
+    }),
+    /** Lab `painting`: multiplier of the unpainted price. */
+    paintingMultiplier: real('painting_multiplier'),
+    /** Lab `finish`: how far the print is cleaned up. */
+    printFinish: printFinish('print_finish'),
     priceDelta: integer('price_delta').notNull().default(0),
     productionDaysDelta: integer('production_days_delta').notNull().default(0),
     isDefault: boolean('is_default').notNull().default(false),

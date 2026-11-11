@@ -13,6 +13,7 @@ import {
   customRequests,
   messages,
   orders,
+  printRequests,
   productionStages,
 } from '../../integrations/database/database.schema';
 import type { MessageAuthorRole } from '../../integrations/database/database.schema';
@@ -28,11 +29,13 @@ export interface MessageAuthor {
 interface Thread {
   orderId: string | null;
   requestId: string | null;
+  printRequestId?: string;
 }
 
 /**
  * Conversation between a customer and the workshop. An order created from a
- * custom request shares one thread with that request.
+ * custom request shares one thread with that request. A Lab print request
+ * keeps its own thread, as one order can include several.
  */
 @Injectable()
 export class MessagesService {
@@ -81,9 +84,29 @@ export class MessagesService {
     return this.list(thread);
   }
 
+  async listForPrintRequest(
+    author: MessageAuthor,
+    printRequestId: string,
+  ): Promise<MessageDto[]> {
+    return this.list(await this.printRequestThread(author, printRequestId));
+  }
+
+  async postToPrintRequest(
+    author: MessageAuthor,
+    printRequestId: string,
+    dto: CreateMessageDto,
+  ): Promise<MessageDto[]> {
+    const thread = await this.printRequestThread(author, printRequestId);
+    await this.post(author, { printRequestId }, dto);
+    return this.list(thread);
+  }
+
   private async post(
     author: MessageAuthor,
-    target: { orderId: string } | { customRequestId: string },
+    target:
+      | { orderId: string }
+      | { customRequestId: string }
+      | { printRequestId: string },
     dto: CreateMessageDto,
   ): Promise<void> {
     const body = dto.body?.trim() ?? '';
@@ -133,6 +156,9 @@ export class MessagesService {
     if (thread.requestId) {
       conditions.push(eq(messages.customRequestId, thread.requestId));
     }
+    if (thread.printRequestId) {
+      conditions.push(eq(messages.printRequestId, thread.printRequestId));
+    }
 
     const rows = await this.db.query.messages.findMany({
       where: or(...conditions),
@@ -146,7 +172,11 @@ export class MessagesService {
       body: row.body,
       attachments: row.attachments,
       stage: row.stage,
-      thread: row.orderId ? 'order' : 'request',
+      thread: row.printRequestId
+        ? 'print_request'
+        : row.orderId
+          ? 'order'
+          : 'request',
       createdAt: row.createdAt,
     }));
   }
@@ -197,5 +227,28 @@ export class MessagesService {
     }
 
     return { orderId: request.orderId, requestId: request.id };
+  }
+
+  private async printRequestThread(
+    author: MessageAuthor,
+    printRequestId: string,
+  ): Promise<Thread> {
+    const [request] = await this.db
+      .select({ id: printRequests.id })
+      .from(printRequests)
+      .where(
+        and(
+          eq(printRequests.id, printRequestId),
+          author.role === 'customer'
+            ? eq(printRequests.customerId, author.id)
+            : undefined,
+        ),
+      );
+
+    if (!request) {
+      throw new NotFoundException('Print request not found');
+    }
+
+    return { orderId: null, requestId: null, printRequestId: request.id };
   }
 }

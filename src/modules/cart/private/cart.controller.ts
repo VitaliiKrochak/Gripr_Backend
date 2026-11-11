@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiCookieAuth,
@@ -19,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import { CurrentUser } from '../../../shared/decorators/current.user.decorator';
+import { StoreQueryDto } from '../../../shared/store/store.query.dto';
 import { AddCartItemDto, CartDto, UpdateCartItemDto } from '../cart.dto';
 import { CartService } from '../cart.service';
 
@@ -29,10 +31,13 @@ export class PrivateCartController {
   constructor(private readonly cartService: CartService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get the priced cart' })
+  @ApiOperation({ summary: 'Get the priced cart of a store' })
   @ApiOkResponse({ type: CartDto })
-  get(@CurrentUser() user: User): Promise<CartDto> {
-    return this.cartService.get(user);
+  get(
+    @CurrentUser() user: User,
+    @Query() query: StoreQueryDto,
+  ): Promise<CartDto> {
+    return this.cartService.get(user, query.store);
   }
 
   @Post('items')
@@ -72,10 +77,13 @@ export class PrivateCartController {
 
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Empty the cart' })
+  @ApiOperation({ summary: 'Empty the cart of a store' })
   @ApiNoContentResponse()
-  clear(@CurrentUser() user: User): Promise<void> {
-    return this.cartService.clear(user.id);
+  clear(
+    @CurrentUser() user: User,
+    @Query() query: StoreQueryDto,
+  ): Promise<void> {
+    return this.cartService.clear(user.id, query.store);
   }
 
   @Post('sets/:collectionSlug')

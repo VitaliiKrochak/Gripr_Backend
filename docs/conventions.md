@@ -31,6 +31,11 @@
   signed-in user's id and return `404` for other customers' records.
 - Authenticate public integration callbacks by verifying the provider
   signature before trusting the payload.
+- Treat uploaded files as untrusted. Browsers upload directly to storage with
+  a signed URL; the API checks the extension and size before signing and the
+  stored size afterwards, parses files only in a worker thread with a time
+  and memory limit, and hands out downloads only as short signed URLs. Write
+  parsers as pure functions over a `Buffer` so they can be unit tested.
 - Keep controllers focused on HTTP input and output. Move reusable or non-trivial
   business logic into a service in the same feature.
 - Keep decision logic (pricing, status transitions, signatures) in pure
@@ -68,15 +73,27 @@
 ## Data and money
 
 - Store and transfer money as integer kopiykas. Never accept prices from
-  clients; recompute them on the server from option value ids.
+  clients; recompute them on the server from option value ids. The only
+  exception is purchase prices bought abroad (printer parts): store them in
+  minor units of their own `costCurrency` and convert to kopiykas when
+  reading, with the USD rate from `readUsdRate`.
+- Single-row settings use the id `default` and are read through
+  `mergeDefaults` (`src/shared/settings`) over code defaults, so new
+  parameters get a value without a migration.
 - After any write that changes product pricing (product fields, stones,
   options, or a metal), call `ProductPricingService.refreshPrices` in the same
   transaction so auto-priced products are recalculated and
   `products.price_from` stays correct. After changing pricing settings, market
-  rates, or metal tariffs, call `ProductPricingService.repriceAll`.
+  rates, or metal tariffs, call `ProductPricingService.repriceAll`. After
+  changing resins, printers, or print settings, call
+  `refreshPriceFrom(tx, printPriced)`.
+- Every new reader that prices configured products must load them through
+  `ProductCatalogService.loadConfigurable` or wrap them with
+  `withPrintPricing`, so print-priced Lab products are priced per selection.
 - Keep workshop costs and tariffs (`metals.pricing_profile`,
-  `products.pricing`, stone purchase fields) out of storefront responses:
-  select explicit columns or map fields one by one.
+  `products.pricing`, `products.print`, stone purchase fields, resin prices)
+  out of storefront responses: select explicit columns or map fields one by
+  one.
 - Store descriptive snapshots (option labels, specification names) next to
   reference ids, so later reference-data edits never rewrite orders,
   requests, or proposals.
@@ -85,6 +102,13 @@
   add per-row save endpoints for new editors.
 - Paginate list endpoints with `PaginationQueryDto` (`page`, `pageSize` up to
   100) and return `{ items, total, page, pageSize }` via `toPage`.
+- Give every table that belongs to one store a `store` column with the
+  `gripr` default. Lists of such records take `store` through
+  `StoreQueryDto` (or `StorePageQueryDto` when paginated), always filter by
+  it, and return `store` in their items. A store is set on creation and is
+  never changed by an update DTO; references between records (product and
+  collection, product and tag, order and production stage) must stay in one
+  store and answer `400` otherwise.
 - Define tables in `src/integrations/database/schema/<area>.schema.ts` inside
   the `app` Postgres schema (`appSchema`) and export them from
   `database.schema.ts`. After changing the schema, run `npm run db:generate`

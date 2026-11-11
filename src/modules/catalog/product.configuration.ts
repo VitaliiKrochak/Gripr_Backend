@@ -2,6 +2,7 @@ import type {
   OptionGroupKind,
   SelectedOption,
 } from '../../integrations/database/database.schema';
+import type { PrintFinish } from '../prints/print.settings';
 
 export const MAX_ENGRAVING_LENGTH = 40;
 
@@ -17,6 +18,12 @@ export interface ConfigurableValue {
   /** Price per gram of the metal on this product; wins over the metal price. */
   pricePerGram?: number | null;
   metal?: { pricePerGram: number | null } | null;
+  /** Print calculator inputs of Lab values, see `ProductPrint`. */
+  heightMm?: number | null;
+  scaleFactor?: number | null;
+  resinId?: string | null;
+  paintingMultiplier?: number | null;
+  printFinish?: PrintFinish | null;
 }
 
 export interface ConfigurableGroup {
@@ -41,7 +48,15 @@ export interface ConfigurableProduct {
   weightGrams?: number | null;
   stones?: ConfigurableStone[];
   optionGroups: ConfigurableGroup[];
+  /**
+   * Prices the whole selection at once instead of adding up surcharges, for
+   * prices that do not add up (Lab prints grow with the cube of the size).
+   */
+  selectionPrice?: (selected: ConfigurableValue[]) => number;
 }
+
+/** Combinations `priceFrom` tries before falling back to the defaults. */
+const MAX_PRICED_COMBINATIONS = 2000;
 
 /** Parts of the unit price, all in kopiykas. */
 export interface PriceBreakdown {
@@ -167,7 +182,9 @@ export function configureProduct(
     (sum, value) => sum + value.productionDaysDelta,
     0,
   );
-  const breakdown = priceBreakdown(product, values);
+  const breakdown = product.selectionPrice
+    ? wholePrice(product.selectionPrice(values))
+    : priceBreakdown(product, values);
   const unitPrice =
     breakdown.manufacturing +
     breakdown.metal +
@@ -186,6 +203,16 @@ export function configureProduct(
     optionValueIds: selectedOptions.map((selected) => selected.valueId),
     selectedOptions,
     engravingText: engraving,
+  };
+}
+
+function wholePrice(price: number): PriceBreakdown {
+  return {
+    manufacturing: price,
+    metal: 0,
+    stones: 0,
+    options: 0,
+    weightGrams: null,
   };
 }
 
@@ -239,6 +266,10 @@ export function defaultSelection(product: ConfigurableProduct): string[] {
  * parts of the price when the product has no complete default.
  */
 export function priceFrom(product: ConfigurableProduct): number {
+  if (product.selectionPrice) {
+    return cheapestPrice(product);
+  }
+
   try {
     return configureProduct(product, defaultSelection(product)).unitPrice;
   } catch (error) {
@@ -249,6 +280,45 @@ export function priceFrom(product: ConfigurableProduct): number {
     const breakdown = priceBreakdown(product, []);
     return Math.max(0, breakdown.manufacturing + breakdown.stones);
   }
+}
+
+/**
+ * Lowest price over every combination of the required groups' available
+ * values (optional groups left out); the default configuration when there
+ * are too many combinations, 0 when nothing can be priced.
+ */
+function cheapestPrice(product: ConfigurableProduct): number {
+  const required = product.optionGroups
+    .filter((group) => group.isRequired)
+    .map((group) => group.values.filter((value) => value.isAvailable));
+  const total = required.reduce((count, values) => count * values.length, 1);
+  const selections =
+    total > MAX_PRICED_COMBINATIONS
+      ? [defaultSelection(product)]
+      : combinations(required.map((values) => values.map((value) => value.id)));
+  let cheapest: number | null = null;
+
+  for (const selection of selections) {
+    try {
+      const price = configureProduct(product, selection).unitPrice;
+      cheapest = cheapest === null ? price : Math.min(cheapest, price);
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) {
+        throw error;
+      }
+    }
+  }
+
+  return cheapest ?? 0;
+}
+
+/** Every pick of one item per list. */
+export function combinations<T>(lists: T[][]): T[][] {
+  return lists.reduce<T[][]>(
+    (result, list) =>
+      result.flatMap((prefix) => list.map((item) => [...prefix, item])),
+    [[]],
+  );
 }
 
 export interface PricedLine {

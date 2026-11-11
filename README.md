@@ -55,7 +55,8 @@ The frontend integration guide is [`docs/frontend.md`](docs/frontend.md).
 Business data lives in the `app` schema of the Supabase Postgres database and
 is accessed with Drizzle ORM. Set `DATABASE_URL` to the Supabase pooler
 connection string, then apply the migrations and seed the reference data
-(metals, gemstones, production stages):
+(metals, gemstones, the production stages of Gripr and Gripr Lab, and the
+default Lab resin and printer):
 
 ```bash
 $ npm run db:migrate
@@ -89,13 +90,24 @@ the admin endpoints.
   `LIQPAY_SIGNATURE_ALGORITHM`, `LIQPAY_RESULT_URL`, and `PUBLIC_API_URL`. The
   callback URL `${PUBLIC_API_URL}/api/payments/liqpay/callback` must be
   reachable from the internet (use a tunnel for local testing).
+- Gripr Lab LiqPay shop (optional): `LIQPAY_LAB_PUBLIC_KEY` and
+  `LIQPAY_LAB_PRIVATE_KEY` (both or neither; empty disables online payment of
+  Lab orders) and `LIQPAY_LAB_RRO_GOOD_ID`. It shares the sandbox flag,
+  signature algorithm, result URL, and callback URL with the Gripr shop.
 - Fiscal receipts (required in production): set up the ПРРО in the LiqPay
-  dashboard and set `LIQPAY_RRO_GOOD_ID`; see
+  dashboard and set `LIQPAY_RRO_GOOD_ID` (and `LIQPAY_LAB_RRO_GOOD_ID`); see
   [`docs/modules/payments.md`](docs/modules/payments.md#fiscal-receipts).
+- Gripr Lab model files (optional): `SUPABASE_SECRET_KEY`, the server-only
+  Supabase secret key (Project Settings → API keys). The API creates the
+  private `lab-models` bucket (50 MB per file) on the first upload; without
+  the key, model uploads answer `503`. The Free plan allows 1 GB of storage,
+  which the nightly cleanup keeps in check.
 - Nova Poshta: `NOVAPOSHTA_API_KEY`.
-- Sketchfab design import (optional): `SKETCHFAB_API_TOKEN` raises rate
-  limits; `DESIGN_IMPORT_ENABLED=false` turns off the nightly import at 02:00
-  Kyiv time. Staff can also start an import from the design review queue; see
+- Open-license design import (optional): `SKETCHFAB_API_TOKEN` raises
+  Sketchfab rate limits; `THINGIVERSE_API_TOKEN` (an app token from
+  thingiverse.com/apps/create) turns on the Thingiverse import for Gripr Lab;
+  `DESIGN_IMPORT_ENABLED=false` turns off the nightly import at 02:00 Kyiv
+  time. Staff can also start an import from the design review queue; see
   [`docs/modules/designs.md`](docs/modules/designs.md).
 - NBU metal and USD rates need no configuration; they are fetched daily at
   06:00 Kyiv time and on demand from the admin pricing page; see

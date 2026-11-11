@@ -39,6 +39,40 @@ describe('scoreRelevance', () => {
     ).toBeLessThan(MIN_RELEVANCE);
   });
 
+  it('scores printable miniatures for Gripr Lab', () => {
+    const knight = {
+      title: 'Knight miniature 32mm',
+      tags: ['tabletop', 'presupported'],
+      description: 'Resin print ready',
+    };
+
+    expect(scoreRelevance(knight, 'lab')).toMatchObject({
+      suggestedType: 'miniature',
+    });
+    expect(scoreRelevance(knight, 'lab').score).toBeGreaterThanOrEqual(
+      MIN_RELEVANCE,
+    );
+    expect(scoreRelevance(knight).score).toBeLessThan(MIN_RELEVANCE);
+    expect(
+      scoreRelevance(
+        { title: 'Marble bust of a philosopher', tags: [], description: null },
+        'lab',
+      ).suggestedType,
+    ).toBe('bust');
+    expect(
+      scoreRelevance(
+        { title: 'Dragon Ring', tags: ['ring', 'jewelry'], description: null },
+        'lab',
+      ).score,
+    ).toBeLessThan(MIN_RELEVANCE);
+    expect(
+      scoreRelevance(
+        { title: 'Game ready orc', tags: ['rigged'], description: null },
+        'lab',
+      ).score,
+    ).toBeLessThan(MIN_RELEVANCE);
+  });
+
   it('returns no type when nothing matches', () => {
     expect(
       scoreRelevance({ title: 'Chair', tags: [], description: null }),

@@ -7,6 +7,9 @@ import type { DesignCreditDto } from './dto/design.credit.dto';
 
 const SOURCE_NAMES: Record<DesignSource, string> = {
   sketchfab: 'Sketchfab',
+  thingiverse: 'Thingiverse',
+  printables: 'Printables',
+  myminifactory: 'MyMiniFactory',
 };
 
 export type DesignCreditSource = Pick<

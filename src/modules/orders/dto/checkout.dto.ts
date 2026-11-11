@@ -1,13 +1,17 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { STORES } from '../../../integrations/database/database.schema';
+import type { Store } from '../../../integrations/database/database.schema';
 
 export class DeliveryAddressDto {
   /** Nova Poshta city `Ref`. */
@@ -60,4 +64,10 @@ export class OrderContactDto {
   saveAsDefault?: boolean;
 }
 
-export class CheckoutDto extends OrderContactDto {}
+export class CheckoutDto extends OrderContactDto {
+  /** Store whose cart lines become the order; the other store's lines stay. */
+  @ApiProperty({ enum: STORES, required: false, default: 'gripr' })
+  @IsOptional()
+  @IsIn(STORES)
+  store: Store = 'gripr';
+}

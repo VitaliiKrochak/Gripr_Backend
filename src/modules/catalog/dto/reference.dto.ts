@@ -1,4 +1,4 @@
-import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { ApiProperty, OmitType, PartialType } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsIn,
@@ -12,10 +12,12 @@ import {
 import {
   FINISHING_KINDS,
   METAL_FAMILIES,
+  STORES,
 } from '../../../integrations/database/database.schema';
 import type {
   FinishingKind,
   MetalFamily,
+  Store,
 } from '../../../integrations/database/database.schema';
 
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -178,6 +180,12 @@ export class FinishingOptionDto {
 }
 
 export class CreateTagDto {
+  /** Cannot be changed later; only products of this store can use the tag. */
+  @ApiProperty({ enum: STORES, required: false, default: 'gripr' })
+  @IsOptional()
+  @IsIn(STORES)
+  store?: Store;
+
   @Matches(SLUG_PATTERN, { message: `slug ${SLUG_MESSAGE}` })
   @MaxLength(60)
   slug: string;
@@ -197,10 +205,14 @@ export class CreateTagDto {
   sortOrder?: number;
 }
 
-export class UpdateTagDto extends PartialType(CreateTagDto) {}
+export class UpdateTagDto extends PartialType(
+  OmitType(CreateTagDto, ['store'] as const),
+) {}
 
 export class TagDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   slug: string;
   name: string;
   group: string | null;

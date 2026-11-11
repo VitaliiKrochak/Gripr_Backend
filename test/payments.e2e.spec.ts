@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import request from 'supertest';
+import { orders } from '../src/integrations/database/database.schema';
+import {
+  getLiqPayConfig,
+  LIQPAY_CONFIG,
+} from '../src/integrations/liqpay/liqpay.config';
 import { CatalogFixture, createCatalog } from './support/catalog.fixtures';
 import { placeOrder } from './support/order.fixtures';
 import { cookieFor, createTestApp, TestContext } from './support/test.app';
@@ -13,10 +19,13 @@ interface Checkout {
   signature: string;
 }
 
-function callback(payload: object): { data: string; signature: string } {
+function callback(
+  payload: object,
+  privateKey = 'liqpay-private',
+): { data: string; signature: string } {
   const data = Buffer.from(JSON.stringify(payload)).toString('base64');
   const signature = createHash('sha3-256')
-    .update(`liqpay-private${data}liqpay-private`)
+    .update(privateKey + data + privateKey)
     .digest('base64');
   return { data, signature };
 }
@@ -110,6 +119,22 @@ describe('Payments (e2e)', () => {
       .send({ data: callback({}).data, signature: 'forged' })
       .expect(400);
 
+    await request(server())
+      .post('/api/payments/liqpay/callback')
+      .type('form')
+      .send(
+        callback(
+          {
+            order_id: checkout.paymentId,
+            status: 'success',
+            amount: order.total / 100,
+            currency: 'UAH',
+          },
+          'liqpay-lab-private',
+        ),
+      )
+      .expect(400);
+
     await postCallback({
       order_id: checkout.paymentId,
       status: 'success',
@@ -148,11 +173,45 @@ describe('Payments (e2e)', () => {
       status: 'paid',
       paidAmount: 100_000,
     });
+    expect(partial.body.payments).toEqual([
+      expect.objectContaining({
+        type: 'manual',
+        merchant: 'gripr',
+        provider: null,
+      }),
+    ]);
 
     const remainder = await startPayment(order.id);
     expect(remainder).toMatchObject({
       type: 'remainder',
       amount: order.total - 100_000,
     });
+  });
+
+  it('refuses online payment for a store without a LiqPay account', async () => {
+    const config = getLiqPayConfig();
+    const withoutLab = await createTestApp([
+      [
+        LIQPAY_CONFIG,
+        { ...config, merchants: { ...config.merchants, lab: null } },
+      ],
+    ]);
+
+    try {
+      const app = withoutLab.app.getHttpServer();
+      const fixture = await createCatalog(app);
+      const order = await placeOrder(app, fixture.earrings.id);
+      await withoutLab.db
+        .update(orders)
+        .set({ store: 'lab' })
+        .where(eq(orders.id, order.id));
+
+      await request(app)
+        .post(`/api/customers/me/orders/${order.id}/payments`)
+        .set('Cookie', customer)
+        .expect(409);
+    } finally {
+      await withoutLab.close();
+    }
   });
 });

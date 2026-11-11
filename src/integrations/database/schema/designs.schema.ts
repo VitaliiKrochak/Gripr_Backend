@@ -8,13 +8,26 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { products, productType } from './catalog.schema';
-import { appSchema, timestamps } from './common.schema';
+import { appSchema, storeEnum, timestamps } from './common.schema';
 
-export const DESIGN_SOURCES = ['sketchfab'] as const;
+export const DESIGN_SOURCES = [
+  'sketchfab',
+  'thingiverse',
+  'printables',
+  'myminifactory',
+] as const;
 export type DesignSource = (typeof DESIGN_SOURCES)[number];
 
-/** Only licenses that allow commercial manufacturing are ever stored. */
-export const DESIGN_LICENSES = ['cc0', 'cc_by'] as const;
+/**
+ * Only licenses that allow selling physical pieces are ever stored. Share-alike
+ * and no-derivatives licenses are accepted for Gripr Lab only.
+ */
+export const DESIGN_LICENSES = [
+  'cc0',
+  'cc_by',
+  'cc_by_sa',
+  'cc_by_nd',
+] as const;
 export type DesignLicense = (typeof DESIGN_LICENSES)[number];
 
 export const DESIGN_IP_RISKS = ['low', 'review', 'blocked'] as const;
@@ -32,6 +45,7 @@ export const designCandidates = appSchema.table(
   'design_candidates',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    store: storeEnum('store').notNull().default('gripr'),
     source: designSource('source').notNull(),
     sourceId: text('source_id').notNull(),
     sourceUrl: text('source_url').notNull(),
@@ -67,6 +81,7 @@ export const designCandidates = appSchema.table(
   },
   (table) => [
     uniqueIndex('design_candidates_source_idx').on(
+      table.store,
       table.source,
       table.sourceId,
     ),

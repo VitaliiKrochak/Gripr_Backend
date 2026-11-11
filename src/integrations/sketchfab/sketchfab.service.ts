@@ -92,7 +92,25 @@ export class SketchfabService {
 
     if (query.cursor) params.set('cursor', query.cursor);
 
-    const response = await fetch(`${this.config.baseUrl}/search?${params}`, {
+    const payload = await this.request<ApiSearchResponse>(`/search?${params}`);
+
+    return {
+      models: payload.results.map(toModel),
+      cursor: payload.next
+        ? new URL(payload.next).searchParams.get('cursor')
+        : null,
+    };
+  }
+
+  /** One model by its uid, for staff imports by URL. */
+  async getModel(uid: string): Promise<SketchfabModel> {
+    return toModel(
+      await this.request<ApiModel>(`/models/${encodeURIComponent(uid)}`),
+    );
+  }
+
+  private async request<T>(path: string): Promise<T> {
+    const response = await fetch(`${this.config.baseUrl}${path}`, {
       headers: this.config.apiToken
         ? { Authorization: `Token ${this.config.apiToken}` }
         : undefined,
@@ -102,14 +120,7 @@ export class SketchfabService {
       throw new SketchfabError(`Sketchfab responded with ${response.status}`);
     }
 
-    const payload = (await response.json()) as ApiSearchResponse;
-
-    return {
-      models: payload.results.map(toModel),
-      cursor: payload.next
-        ? new URL(payload.next).searchParams.get('cursor')
-        : null,
-    };
+    return (await response.json()) as T;
   }
 }
 

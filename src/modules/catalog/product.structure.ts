@@ -11,17 +11,21 @@ import {
   productImages,
   products,
   productStones,
+  resins,
 } from '../../integrations/database/database.schema';
 import type {
   FinishingKind,
+  OptionGroupKind,
   ProductType,
 } from '../../integrations/database/database.schema';
 import type {
   ProductImageInputDto,
   ProductOptionGroupInputDto,
+  ProductOptionValueInputDto,
   ProductStoneInputDto,
 } from './dto/product.dto';
 import { defaultGroupName, valueLabel } from './product.labels';
+import { optionKindError } from './product.stores';
 
 export interface ProductStructureInput {
   stones?: ProductStoneInputDto[];
@@ -119,6 +123,14 @@ async function saveOptionGroups(
       .innerJoin(optionGroups, eq(optionGroups.id, optionValues.groupId))
       .where(eq(optionGroups.productId, productId)),
   );
+  for (const group of groups) {
+    const error = optionKindError(type, group.kind);
+
+    if (error) {
+      throw new BadRequestException(error);
+    }
+  }
+
   const values = groups.flatMap((group) => group.values);
   await assertNewIds(tx, optionGroups, currentGroups, groups);
   await assertNewIds(tx, optionValues, currentValues, values);
@@ -146,6 +158,8 @@ async function saveOptionGroups(
       const finishing = value.finishingId
         ? refs.finishing.get(value.finishingId)
         : null;
+      const print = printFields(group.kind, value);
+      const resin = print.resinId ? refs.resins.get(print.resinId) : null;
 
       if (
         finishing &&
@@ -157,11 +171,12 @@ async function saveOptionGroups(
         );
       }
 
-      const label = valueLabel(group.kind, type, value, {
-        metal,
-        gemstone,
-        finishing,
-      });
+      const label = valueLabel(
+        group.kind,
+        type,
+        { ...value, ...print },
+        { metal, gemstone, finishing, resin },
+      );
 
       if (!label) {
         throw new BadRequestException(
@@ -188,6 +203,7 @@ async function saveOptionGroups(
           settingCost: value.settingCost ?? 0,
           sizeValue: value.sizeValue ?? null,
           weightDeltaGrams: value.weightDeltaGrams ?? 0,
+          ...print,
           priceDelta: value.priceDelta ?? 0,
           productionDaysDelta: value.productionDaysDelta ?? 0,
           isDefault,
@@ -275,6 +291,28 @@ async function saveImages(
     );
 }
 
+/** Print calculator fields of a value; each belongs to one Lab group kind. */
+export function printFields(
+  kind: OptionGroupKind,
+  value: Pick<
+    ProductOptionValueInputDto,
+    | 'heightMm'
+    | 'scaleFactor'
+    | 'resinId'
+    | 'paintingMultiplier'
+    | 'printFinish'
+  >,
+) {
+  return {
+    heightMm: kind === 'scale' ? (value.heightMm ?? null) : null,
+    scaleFactor: kind === 'scale' ? (value.scaleFactor ?? null) : null,
+    resinId: kind === 'resin' ? (value.resinId ?? null) : null,
+    paintingMultiplier:
+      kind === 'painting' ? (value.paintingMultiplier ?? null) : null,
+    printFinish: kind === 'finish' ? (value.printFinish ?? null) : null,
+  };
+}
+
 async function idsOf(query: Promise<Array<{ id: string }>>) {
   return new Set((await query).map((row) => row.id));
 }
@@ -339,37 +377,46 @@ async function loadReferences(
   const metalIds = values.flatMap((value) => value.metalId ?? []);
   const gemstoneIds = values.flatMap((value) => value.gemstoneId ?? []);
   const finishingIds = values.flatMap((value) => value.finishingId ?? []);
-  const [metalRows, gemstoneRows, finishingRows] = await Promise.all([
-    tx
-      .select({ id: metals.id, name: metals.name })
-      .from(metals)
-      .where(inArray(metals.id, metalIds)),
-    tx
-      .select({ id: gemstones.id, name: gemstones.name })
-      .from(gemstones)
-      .where(inArray(gemstones.id, gemstoneIds)),
-    tx
-      .select({
-        id: finishingOptions.id,
-        name: finishingOptions.name,
-        kind: finishingOptions.kind,
-      })
-      .from(finishingOptions)
-      .where(inArray(finishingOptions.id, finishingIds)),
-  ]);
+  const resinIds = values.flatMap((value) => value.resinId ?? []);
+  const [metalRows, gemstoneRows, finishingRows, resinRows] = await Promise.all(
+    [
+      tx
+        .select({ id: metals.id, name: metals.name })
+        .from(metals)
+        .where(inArray(metals.id, metalIds)),
+      tx
+        .select({ id: gemstones.id, name: gemstones.name })
+        .from(gemstones)
+        .where(inArray(gemstones.id, gemstoneIds)),
+      tx
+        .select({
+          id: finishingOptions.id,
+          name: finishingOptions.name,
+          kind: finishingOptions.kind,
+        })
+        .from(finishingOptions)
+        .where(inArray(finishingOptions.id, finishingIds)),
+      tx
+        .select({ id: resins.id, name: resins.name })
+        .from(resins)
+        .where(inArray(resins.id, resinIds)),
+    ],
+  );
   const refs = {
     metals: new Map(metalRows.map((row) => [row.id, row])),
     gemstones: new Map(gemstoneRows.map((row) => [row.id, row])),
     finishing: new Map(finishingRows.map((row) => [row.id, row])),
+    resins: new Map(resinRows.map((row) => [row.id, row])),
   };
 
   if (
     metalIds.some((id) => !refs.metals.has(id)) ||
     gemstoneIds.some((id) => !refs.gemstones.has(id)) ||
-    finishingIds.some((id) => !refs.finishing.has(id))
+    finishingIds.some((id) => !refs.finishing.has(id)) ||
+    resinIds.some((id) => !refs.resins.has(id))
   ) {
     throw new BadRequestException(
-      'Referenced metal, gemstone, or operation does not exist',
+      'Referenced metal, gemstone, operation, or resin does not exist',
     );
   }
 

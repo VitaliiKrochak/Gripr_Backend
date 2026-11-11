@@ -16,13 +16,15 @@ import {
   OPTION_GROUP_KINDS,
   PRODUCT_AVAILABILITIES,
   PRODUCT_TYPES,
+  STORES,
 } from '../../integrations/database/database.schema';
 import type {
   OptionGroupKind,
   ProductAvailability,
   ProductType,
+  Store,
 } from '../../integrations/database/database.schema';
-import { PaginationQueryDto } from '../../shared/pagination/pagination.query.dto';
+import { StorePageQueryDto } from '../../shared/store/store.query.dto';
 import { ImageDto } from '../catalog/dto/collection.dto';
 import { ProductCardDto } from '../catalog/dto/product.card.dto';
 import { ProductSpecificationDto } from '../catalog/dto/product.dto';
@@ -33,6 +35,9 @@ import {
   TagDto,
 } from '../catalog/dto/reference.dto';
 import { DesignCreditDto } from '../designs/dto/design.credit.dto';
+import { StorefrontResinDto } from '../prints/dto/resin.dto';
+import { PRINT_FINISHES } from '../prints/print.settings';
+import type { PrintFinish } from '../prints/print.settings';
 
 export const PRODUCT_SORTS = [
   'featured',
@@ -53,7 +58,7 @@ const toArray = ({ value }: { value: unknown }) =>
 const toBoolean = ({ value }: { value: unknown }) =>
   value === undefined ? undefined : value === true || value === 'true';
 
-export class StorefrontProductQueryDto extends PaginationQueryDto {
+export class StorefrontProductQueryDto extends StorePageQueryDto {
   /** Collection slug. */
   @IsOptional()
   @IsString()
@@ -156,7 +161,7 @@ export class SelectedOptionDto {
 
 /** Parts of the unit price, in kopiykas. */
 export class PriceBreakdownDto {
-  /** Manufacturing work. */
+  /** Manufacturing work; the whole price of a product priced per selection. */
   manufacturing: number;
   /** Metal by weight at the current price per gram. */
   metal: number;
@@ -190,6 +195,16 @@ export class StorefrontOptionValueDto {
   stoneSizeMm: number | null;
   /** Ring size or length in cm, depending on the product type. */
   sizeValue: number | null;
+  /** Lab `scale`: finished height in mm, or a factor of the reference model. */
+  heightMm: number | null;
+  scaleFactor: number | null;
+  /** Lab `resin`: the resin printed with. */
+  @ApiProperty({ type: StorefrontResinDto, nullable: true })
+  resin: StorefrontResinDto | null;
+  /** Lab `finish`. */
+  @ApiProperty({ enum: PRINT_FINISHES, nullable: true })
+  printFinish: PrintFinish | null;
+  /** Surcharge; 0 when the product is priced per selection (use quotes). */
   priceDelta: number;
   productionDaysDelta: number;
   isDefault: boolean;
@@ -246,6 +261,8 @@ export class StorefrontProductDto {
   id: string;
   slug: string;
   name: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   @ApiProperty({ enum: PRODUCT_TYPES })
   type: ProductType;
   shortDescription: string | null;
@@ -259,10 +276,18 @@ export class StorefrontProductDto {
   isHot: boolean;
   isNew: boolean;
   isFeatured: boolean;
-  /** Manufacturing price. */
+  /** Manufacturing price; 0 when the product is priced per selection. */
   basePrice: number;
-  /** Price of the default configuration. */
+  /**
+   * Price of the default configuration, or of the cheapest one when the
+   * product is priced per selection.
+   */
   priceFrom: number;
+  /**
+   * Lab prints priced by the print calculator: option surcharges do not add
+   * up, so request a quote for every selection.
+   */
+  pricedPerSelection: boolean;
   productionDaysMin: number;
   productionDaysMax: number;
   seoTitle: string | null;

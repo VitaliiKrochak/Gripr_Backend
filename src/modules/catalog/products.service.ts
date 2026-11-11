@@ -5,7 +5,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { DATABASE } from '../../integrations/database/database.client';
 import type {
@@ -13,11 +24,14 @@ import type {
   DatabaseExecutor,
 } from '../../integrations/database/database.client';
 import {
+  collections,
   productImages,
   products,
   productStones,
   productTags,
+  tags,
 } from '../../integrations/database/database.schema';
+import type { Store } from '../../integrations/database/database.schema';
 import { qualified } from '../../integrations/database/database.sql';
 import { toOffset, toPage } from '../../shared/pagination/pagination';
 import { withConflictMapping } from '../../shared/errors/conflict.mapping';
@@ -31,6 +45,8 @@ import type {
   UpdateProductDto,
 } from './dto/product.dto';
 import { ProductPricingService } from '../pricing/product.pricing.service';
+import { resolveProductPrint } from '../prints/print.context';
+import { storeOfType } from './product.stores';
 import { saveProductStructure, touchProduct } from './product.structure';
 
 const SLUG_CONFLICT = 'Product slug already exists';
@@ -45,7 +61,7 @@ export class ProductsService {
   ) {}
 
   async list(query: AdminProductListQueryDto): Promise<AdminProductPageDto> {
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(products.store, query.store)];
 
     if (query.status) conditions.push(eq(products.status, query.status));
     if (query.type) conditions.push(eq(products.type, query.type));
@@ -64,6 +80,7 @@ export class ProductsService {
       this.db
         .select({
           id: products.id,
+          store: products.store,
           slug: products.slug,
           name: products.name,
           type: products.type,
@@ -104,14 +121,18 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto): Promise<AdminProductDto> {
-    const { tagIds, stones, optionGroups, images, ...values } = dto;
+    const { tagIds, stones, optionGroups, images, print, ...fields } = dto;
+    const values = { ...fields, ...(await printField(this.db, null, print)) };
+    const store = storeOfType(values.type);
     assertProductionDays(values.productionDaysMin, values.productionDaysMax);
+    assertStoreFeatures(store, dto);
 
     const id = await withConflictMapping(
       this.db.transaction(async (tx) => {
+        await assertStoreReferences(tx, store, values.collectionId, tagIds);
         const [product] = await tx
           .insert(products)
-          .values({ ...values, ...publicationFields(values.status) })
+          .values({ ...values, store, ...publicationFields(values.status) })
           .returning({ id: products.id });
         await replaceTags(tx, product.id, tagIds);
         await saveProductStructure(tx, product.id, values.type, {
@@ -133,14 +154,30 @@ export class ProductsService {
 
   async update(id: string, dto: UpdateProductDto): Promise<AdminProductDto> {
     const current = await this.get(id);
-    const { tagIds, stones, optionGroups, images, ...values } = dto;
+    const { tagIds, stones, optionGroups, images, print, ...fields } = dto;
+    const values = { ...fields, ...(await printField(this.db, id, print)) };
     assertProductionDays(
       values.productionDaysMin ?? current.productionDaysMin,
       values.productionDaysMax ?? current.productionDaysMax,
     );
 
+    if (values.type && storeOfType(values.type) !== current.store) {
+      throw new BadRequestException(
+        'A product cannot move to the other store; choose a type of its store',
+      );
+    }
+
+    assertStoreFeatures(current.store, dto);
+
     await withConflictMapping(
       this.db.transaction(async (tx) => {
+        await assertStoreReferences(
+          tx,
+          current.store,
+          values.collectionId,
+          tagIds,
+        );
+
         if (Object.keys(values).length) {
           await tx
             .update(products)
@@ -182,6 +219,82 @@ export class ProductsService {
 
     if (!row) {
       throw new NotFoundException('Product not found');
+    }
+  }
+}
+
+async function printField(
+  executor: DatabaseExecutor,
+  productId: string | null,
+  print: CreateProductDto['print'],
+) {
+  return print === undefined
+    ? {}
+    : {
+        print:
+          print === null
+            ? null
+            : await resolveProductPrint(executor, productId, print),
+      };
+}
+
+/**
+ * Fixed stones and the jewelry price calculator exist only in Gripr, the
+ * print calculator only in Gripr Lab.
+ */
+function assertStoreFeatures(
+  store: Store,
+  dto: Pick<CreateProductDto, 'stones' | 'pricing' | 'print'>,
+): void {
+  if (store === 'gripr') {
+    if (dto.print) {
+      throw new BadRequestException(
+        'Print pricing is only available for Lab products',
+      );
+    }
+
+    return;
+  }
+
+  if (dto.stones?.length) {
+    throw new BadRequestException('Lab products have no fixed stones');
+  }
+
+  if (dto.pricing?.mode === 'auto') {
+    throw new BadRequestException(
+      'Automatic jewelry pricing is not available for Lab products',
+    );
+  }
+}
+
+async function assertStoreReferences(
+  executor: DatabaseExecutor,
+  store: Store,
+  collectionId: string | null | undefined,
+  tagIds: string[] | undefined,
+): Promise<void> {
+  if (collectionId) {
+    const [collection] = await executor
+      .select({ store: collections.store })
+      .from(collections)
+      .where(eq(collections.id, collectionId));
+
+    if (collection && collection.store !== store) {
+      throw new BadRequestException(
+        'The collection belongs to the other store',
+      );
+    }
+  }
+
+  if (tagIds?.length) {
+    const [other] = await executor
+      .select({ id: tags.id })
+      .from(tags)
+      .where(and(inArray(tags.id, tagIds), ne(tags.store, store)))
+      .limit(1);
+
+    if (other) {
+      throw new BadRequestException('Some tags belong to the other store');
     }
   }
 }
@@ -260,6 +373,7 @@ export async function loadProductDetails(db: DatabaseExecutor, where: SQL) {
               metal: { columns: { pricingProfile: false } },
               gemstone: true,
               finishing: true,
+              resin: true,
             },
           },
         },

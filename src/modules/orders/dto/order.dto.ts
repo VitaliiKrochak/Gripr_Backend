@@ -1,23 +1,33 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 import {
+  MODEL_DELIVERABLES,
+  ORDER_ITEM_KINDS,
   ORDER_KINDS,
   ORDER_STATUSES,
+  PAYMENT_PROVIDERS,
   PAYMENT_STATUSES,
   PAYMENT_TYPES,
   PRODUCTION_STEP_STATES,
+  STORES,
 } from '../../../integrations/database/database.schema';
 import type {
+  ModelDeliverable,
+  OrderItemKind,
   OrderKind,
   OrderStatus,
+  PaymentProvider,
   PaymentStatus,
   PaymentType,
   ProductionStepState,
+  Store,
 } from '../../../integrations/database/database.schema';
 import { ImageDto } from '../../catalog/dto/collection.dto';
 import { SelectedOptionDto } from '../../storefront/storefront.dto';
 import { JewelrySpecificationDto } from '../../../shared/specification/jewelry.specification.dto';
 import type { NextPayment } from '../order.balance';
+import { REVISION_KINDS } from '../order.modeling';
+import type { RevisionKind } from '../order.modeling';
 
 export class ProductionStageSummaryDto {
   id: string;
@@ -45,6 +55,10 @@ export class AdminProductionStepDto extends ProductionStepDto {
 
 export class OrderItemDto {
   id: string;
+  /** `print` lines are the customer's Lab models (`printRequestId`). */
+  @ApiProperty({ enum: ORDER_ITEM_KINDS })
+  itemKind: OrderItemKind;
+  printRequestId: string | null;
   productId: string | null;
   productSlug: string | null;
   productName: string;
@@ -90,6 +104,13 @@ export class OrderPaymentDto {
 }
 
 export class AdminOrderPaymentDto extends OrderPaymentDto {
+  /** The store account that receives the money. */
+  @ApiProperty({ enum: STORES })
+  merchant: Store;
+  /** 
+ull for manual payments. */
+  @ApiProperty({ enum: PAYMENT_PROVIDERS, nullable: true })
+  provider: PaymentProvider | null;
   providerPaymentId: string | null;
   providerStatus: string | null;
   note: string | null;
@@ -111,7 +132,11 @@ export class NextPaymentDto {
 
 export class OrderSummaryDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   number: number;
+  /** Number with the store prefix, e.g. `LAB-1043`. */
+  reference: string;
   @ApiProperty({ enum: ORDER_KINDS })
   kind: OrderKind;
   @ApiProperty({ enum: ORDER_STATUSES })
@@ -130,9 +155,37 @@ export class OrderSummaryPageDto {
   pageSize: number;
 }
 
+export class RevisionTermsDto {
+  /** Revisions included in the model price. */
+  freeBig: number;
+  freeSmall: number;
+  /** Kopiykas per revision beyond the free ones. */
+  bigPrice: number;
+  smallPrice: number;
+}
+
+/** Gripr Lab modeling order: what is delivered and the model revisions. */
+export class OrderModelingDto {
+  @ApiProperty({ enum: MODEL_DELIVERABLES })
+  deliverable: ModelDeliverable;
+  terms: RevisionTermsDto;
+  bigRevisions: number;
+  smallRevisions: number;
+  freeBigRevisionsLeft: number;
+  freeSmallRevisionsLeft: number;
+  /** Requested changes waiting for staff to classify them. */
+  pendingRevision: boolean;
+  /** Personal-use license of the delivered file; `null` without a file. */
+  license: string | null;
+}
+
 export class OrderDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   number: number;
+  /** Number with the store prefix, e.g. `LAB-1043`. */
+  reference: string;
   @ApiProperty({ enum: ORDER_KINDS })
   kind: OrderKind;
   @ApiProperty({ enum: ORDER_STATUSES })
@@ -160,6 +213,8 @@ export class OrderDto {
   customRequestId: string | null;
   /** What the customer should pay next, or null. */
   nextPayment: NextPaymentDto | null;
+  @ApiProperty({ type: OrderModelingDto, nullable: true })
+  modeling: OrderModelingDto | null;
   productionDaysMin: number;
   productionDaysMax: number;
   customerComment: string | null;
@@ -190,6 +245,16 @@ export class AdminOrderDto extends OrderDto {
   /** Statuses the order can move to next. */
   @ApiProperty({ enum: ORDER_STATUSES, isArray: true })
   allowedTransitions: OrderStatus[];
+}
+
+export class ModelRevisionDto {
+  /**
+   * `big`: shape, pose, or proportions; `small`: a detail or a size
+   * correction.
+   */
+  @ApiProperty({ enum: REVISION_KINDS })
+  @IsIn(REVISION_KINDS)
+  kind: RevisionKind;
 }
 
 export class ModelChangesDto {

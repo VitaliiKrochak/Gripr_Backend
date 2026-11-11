@@ -4,12 +4,17 @@ Administrator management of everything customers see in the store. All routes
 are admin-only and use canonical resource paths; the customer-facing view is
 the [storefront](storefront.md).
 
+Products, collections, and tags belong to one of the two
+[stores](../architecture.md#stores), `gripr` or `lab`. Their lists take
+`?store=` (`gripr` by default) and their responses include `store`. Metals,
+gemstones, and finishing options are Gripr reference data.
+
 ## Reference data
 
 - `GET|POST /api/metals`, `PATCH|DELETE /api/metals/:id`
 - `GET|POST /api/gemstones`, `PATCH|DELETE /api/gemstones/:id`
 - `GET|POST /api/finishing-options`, `PATCH|DELETE /api/finishing-options/:id`
-- `GET|POST /api/tags`, `PATCH|DELETE /api/tags/:id`
+- `GET /api/tags?store=`, `POST /api/tags`, `PATCH|DELETE /api/tags/:id`
 
 Metals, gemstones, and finishing options have a unique `code` (slug) used in
 storefront filters, a display name, sort order, and `isActive`. Metals also
@@ -28,9 +33,13 @@ nine options.
 Deleting reference data used by products answers `409`; deactivate it
 instead. Deleting a tag detaches it from products.
 
+A tag is created in a `store` (`gripr` by default) that cannot be changed
+later, and only products of that store can use it (`400` otherwise). Tag
+slugs are unique across both stores.
+
 ## Collections
 
-- `GET /api/collections?status=`, `GET /api/collections/:id`
+- `GET /api/collections?store=&status=`, `GET /api/collections/:id`
 - `POST /api/collections`, `PATCH /api/collections/:id`,
   `DELETE /api/collections/:id`
 
@@ -47,19 +56,37 @@ removed from the collection. A product belongs to at most one collection, so
 adding it moves it from its previous collection. Collection responses include
 the ordered `products` (id, slug, name, type, status, first image).
 
+A collection is created in a `store` (`gripr` by default) that cannot be
+changed later. It holds only products of its store: `productIds` with a
+product of the other store answers `400`. Collection slugs are unique across
+both stores.
+
 ## Products
 
-- `GET /api/products?status=&collectionId=&type=&q=`, `GET /api/products/:id`
+- `GET /api/products?store=&status=&collectionId=&type=&q=`,
+  `GET /api/products/:id`
 - `POST /api/products`, `PATCH /api/products/:id`, `DELETE /api/products/:id`
 
-A product has a slug, name, type (ring, earrings, pendant, necklace, chain,
-bracelet, brooch, cufflinks, other), short and long description,
+A product has a slug, name, type, short and long description,
 specification rows, collection, tags (`tagIds` replaces all tags), flags
 (`isHot`, `isNew`, `isFeatured`), `basePrice` (the manufacturing price) in
 kopiykas, `weightGrams`, `widthMm`, `heightMm`, production time
 (`productionDaysMin/Max`), `availability` (`in_stock` or `made_to_order`),
 `stockQuantity`, sort order, SEO fields, and `status`. Admin responses also
 include the computed `priceFrom`.
+
+The type decides the product's store (`product.stores.ts`):
+
+- Gripr: `ring`, `earrings`, `pendant`, `necklace`, `chain`, `bracelet`,
+  `brooch`, `cufflinks`, `other`.
+- Gripr Lab: `miniature`, `figurine`, `bust`, `statue`, `terrain`,
+  `diorama`, `prop`, `other_print`.
+
+An update may change the type only within the store (`400` otherwise). The
+collection and tags must belong to the product's store. Lab products cannot
+have fixed `stones` or the automatic jewelry `pricing` (`400`); they use the
+print calculator through `print` (see [print pricing](#print-pricing)) or a
+manual `basePrice`. Jewelry products cannot have `print` (`400`).
 
 Only `published` products are visible in the storefront; drafts and archived
 products answer `404` there (product page, quote, recommendations, cart,
@@ -119,8 +146,7 @@ linked to an option value (for example the white-gold variant) with
 These granular routes remain for small edits; the admin editor saves the
 whole product instead.
 
-An option group has a `kind` (`metal`, `stone`, `size`, `engraving`,
-`coating`, `processing`, `custom`), a name, `isRequired`, and sort order.
+An option group has a `kind`, a name, `isRequired`, and sort order.
 Values carry a label and, depending on the kind, `metalId`, `gemstoneId`,
 `stoneCarat`, `stoneSizeMm`, `sizeValue`, or `finishingId` (a finishing
 option of the same kind), plus `priceDelta` (kopiykas, may be negative),
@@ -133,9 +159,24 @@ products; never shown on the storefront),
 `weightDeltaGrams`, `productionDaysDelta`, `isDefault` (one per group), and
 `isAvailable`.
 
+The allowed kinds depend on the store; other kinds answer `400`:
+
+- Gripr: `metal`, `stone`, `size`, `engraving`, `coating`, `processing`,
+  `custom`.
+- Gripr Lab: `scale`, `resin`, `painting`, `base`, `finish`, `custom`.
+  Besides the label, `priceDelta`, and `productionDaysDelta`, each kind has
+  its print field: `scale` values `heightMm` (finished height, wins) or
+  `scaleFactor` (factor of the reference model), `resin` values `resinId`,
+  `painting` values `paintingMultiplier` (1 unpainted, 2 painted, 3 complex
+  by default), and `finish` values `printFinish` (`raw`,
+  `supports_removed`, `sanded`). A field sent for another kind is stored as
+  `null`. Labels default to "60 мм", "× 0.5", the resin name, or the finish
+  name ("Без обробки", "Без підтримок", "Відшліфовано"). A resin used by an
+  option value cannot be deleted (`409`).
+
 Sizes depend on the product type (`src/modules/catalog/product.types.ts`):
 rings use ring sizes, chains, necklaces, and bracelets use a length in
-centimetres, and other types have no size. Sizes are ordinary values of a
+centimetres, and other types (including every Lab type) have no size. Sizes are ordinary values of a
 `size` group, so every size can have its own surcharge and weight change. An
 `engraving` group enables engraving text of up to 40 characters.
 
@@ -183,3 +224,25 @@ and the `priceDelta` of metal option values on every save, ignoring the sent
 values; see [pricing](pricing.md#auto-priced-products). `null` (existing
 products) or `manual` keeps hand-entered prices. `pricing` and the stone
 purchase fields are admin-only and never returned by the storefront.
+
+### Print pricing
+
+`print` on a Lab product stores the print calculator inputs at the model's
+reference size: `mode` (`auto` or `manual`), `volumeMl` (without
+supports), `sizeMm` (`x`, `y`, and the printed height `z`), and `overrides`
+(`supportRate`, `resinMl`, `printHours`, `plateShare`; missing ones are
+stored as `null`). With `printFileId` (a measured
+[model file](prints.md#product-models) of the product, set on update) the
+volume and size are copied from the file and may be omitted. In `auto` mode the unit price is not added up from
+surcharges: every selection is priced as a whole by the
+[print calculator](prints.md#print-calculator), because the resin grows
+with the cube of the size. The selected scale, resin (else the default
+resin), finish (else `supports_removed`), and painting multiplier are its
+inputs, and the `priceDelta` of the selected values (for example a base) is
+added to the cost before the markup. `basePrice` is ignored, quote
+breakdowns put the whole price into `manufacturing`, and the production
+time is the print settings range plus the `productionDaysDelta` of the
+selected values. `priceFrom` is the cheapest combination of the available
+values of the required groups (the default configuration beyond 2 000
+combinations). An inactive resin makes its combinations unavailable.
+`print` is admin-only.

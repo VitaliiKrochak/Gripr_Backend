@@ -19,6 +19,7 @@ import {
 import type { Metal } from '../../integrations/database/database.schema';
 import { NbuService } from '../../integrations/nbu/nbu.service';
 import {
+  printPriced,
   productsWithMetal,
   refreshPriceFrom,
 } from '../catalog/product.pricing';
@@ -28,6 +29,7 @@ import { RATE_CODES } from './pricing.settings';
 import type { PricingSettings } from './pricing.settings';
 import { planProductPrices } from './product.price.plan';
 import type { PlanMetal } from './product.price.plan';
+import { readUsdRate } from './usd.rate';
 
 export const SETTINGS_ID = 'default';
 
@@ -53,6 +55,11 @@ export class ProductPricingService {
     @Inject(DATABASE) private readonly db: Database,
     private readonly nbu: NbuService,
   ) {}
+
+  /** UAH per USD: the manual rate, else the NBU rate, else the settings rate. */
+  usdRate(executor: DatabaseExecutor = this.db): Promise<number> {
+    return readUsdRate(executor);
+  }
 
   async context(executor: DatabaseExecutor = this.db): Promise<PricingContext> {
     const [settingsRow, rateRows, metalRows] = await Promise.all([
@@ -232,6 +239,7 @@ export class ProductPricingService {
     const changed = await this.syncMetalPrices(tx, ctx);
     await this.applyAutoPricing(tx, undefined, ctx);
     await refreshPriceFrom(tx, autoPriced);
+    await refreshPriceFrom(tx, printPriced);
 
     for (const metalId of changed) {
       await refreshPriceFrom(tx, productsWithMetal(tx, metalId));

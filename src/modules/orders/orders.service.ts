@@ -36,16 +36,24 @@ import {
 } from '../../integrations/database/database.schema';
 import type {
   JewelrySpecification,
+  ModelDeliverable,
   Order,
   OrderStatus,
+  RevisionTerms,
   SelectedOption,
+  Store,
 } from '../../integrations/database/database.schema';
 import { qualified } from '../../integrations/database/database.sql';
 import { toOffset, toPage } from '../../shared/pagination/pagination';
 import { normalizeUkrainianPhone } from '../../shared/phone/ukrainian.phone';
-import type { PaginationQueryDto } from '../../shared/pagination/pagination.query.dto';
+import type { StorePageQueryDto } from '../../shared/store/store.query.dto';
 import { CartService } from '../cart/cart.service';
 import { CustomersService } from '../customers/customers.service';
+import {
+  cancelOrderPrints,
+  markPrintsOrdered,
+  printOrderItems,
+} from '../prints/print.requests.cart';
 import type { CheckoutDto, OrderContactDto } from './dto/checkout.dto';
 import type {
   AdminOrderListQueryDto,
@@ -59,6 +67,14 @@ import type {
   OrderSummaryPageDto,
 } from './dto/order.dto';
 import { nextPayment } from './order.balance';
+import {
+  deliversPrint,
+  newOrderModeling,
+  recordRevision,
+  toModelingDto,
+} from './order.modeling';
+import type { RevisionKind } from './order.modeling';
+import { orderReference, parseOrderReference } from './order.reference';
 import {
   assertTransition,
   CUSTOMER_CANCELLABLE,
@@ -116,7 +132,16 @@ export interface StagedCustomPricing {
   productionPrepayment: number;
 }
 
+/** Gripr Lab modeling: what is delivered and the revisions included. */
+export interface LabModelingInput {
+  deliverable: ModelDeliverable;
+  terms: RevisionTerms;
+  /** Size, resin, finish, painting, base, and quantity of the print. */
+  printOptions: SelectedOption[];
+}
+
 export interface CustomOrderInput {
+  store?: Store;
   customerId: string;
   contact: OrderContactDto & { contactPhone: string };
   productName: string;
@@ -127,9 +152,63 @@ export interface CustomOrderInput {
   selectedOptions?: SelectedOption[];
   specification?: JewelrySpecification | null;
   pricing: LegacyCustomPricing | StagedCustomPricing;
+  lab?: LabModelingInput;
   productionDaysMin: number;
   productionDaysMax: number;
   changedBy: string;
+}
+
+const DELIVERABLE_LABELS: Record<ModelDeliverable, string> = {
+  print: 'Надрукована модель',
+  file: 'Файл моделі',
+  print_and_file: 'Надрукована модель і файл',
+};
+
+/** The model, and for printed deliverables the print, as separate items. */
+function modelingItems(
+  orderId: string,
+  input: CustomOrderInput,
+  lab: LabModelingInput,
+  pricing: StagedCustomPricing,
+): (typeof orderItems.$inferInsert)[] {
+  const common = {
+    orderId,
+    imageUrl: input.imageUrl,
+    quantity: 1,
+    productionDaysMin: input.productionDaysMin,
+    productionDaysMax: input.productionDaysMax,
+  };
+  const model = {
+    ...common,
+    itemKind: 'model' as const,
+    productName: `3D-модель: ${input.productName}`,
+    selectedOptions: [
+      {
+        groupId: 'deliverable',
+        groupName: 'Результат',
+        kind: 'deliverable',
+        valueId: lab.deliverable,
+        label: DELIVERABLE_LABELS[lab.deliverable],
+        priceDelta: 0,
+      },
+    ],
+    unitPrice: pricing.modelPrice,
+    lineTotal: pricing.modelPrice,
+  };
+
+  return deliversPrint(lab.deliverable)
+    ? [
+        model,
+        {
+          ...common,
+          itemKind: 'print' as const,
+          productName: `Друк: ${input.productName}`,
+          selectedOptions: lab.printOptions,
+          unitPrice: pricing.productPrice,
+          lineTotal: pricing.productPrice,
+        },
+      ]
+    : [model];
 }
 
 interface TransitionOptions {
@@ -150,9 +229,11 @@ export class OrdersService {
 
     const orderId = await this.db.transaction(async (tx) => {
       await this.customers.ensure(user, tx);
-      const cart = await this.cart.price(user.id, tx);
+      const cart = await this.cart.price(user.id, dto.store, tx, {
+        lock: true,
+      });
 
-      if (!cart.lines.length) {
+      if (!cart.lines.length && !cart.prints.length) {
         throw new BadRequestException('Cart is empty');
       }
 
@@ -192,6 +273,7 @@ export class OrdersService {
         .insert(orders)
         .values({
           kind: 'catalog',
+          store: dto.store,
           customerId: user.id,
           ...this.contactColumns(dto, contactPhone),
           subtotal: cart.subtotal,
@@ -202,8 +284,8 @@ export class OrdersService {
         })
         .returning({ id: orders.id });
 
-      await tx.insert(orderItems).values(
-        cart.lines.map((line) => ({
+      await tx.insert(orderItems).values([
+        ...cart.lines.map((line) => ({
           orderId: order.id,
           productId: line.input.productId,
           productSlug: line.product!.slug,
@@ -219,13 +301,19 @@ export class OrdersService {
           productionDaysMin: line.configuration!.productionDaysMin,
           productionDaysMax: line.configuration!.productionDaysMax,
         })),
+        ...printOrderItems(order.id, cart.prints),
+      ]);
+      await markPrintsOrdered(
+        tx,
+        cart.prints.map((print) => print.requestId),
+        order.id,
       );
       await tx.insert(orderStatusHistory).values({
         orderId: order.id,
         toStatus: 'pending_payment',
         changedBy: user.id,
       });
-      await this.cart.clear(user.id, tx);
+      await this.cart.clear(user.id, dto.store, tx);
       await this.saveDefaults(tx, user.id, dto);
 
       return order.id;
@@ -234,7 +322,10 @@ export class OrdersService {
     return this.getForCustomer(user, orderId);
   }
 
-  /** Creates a single-item custom order from an approved proposal or quote. */
+  /**
+   * Creates a custom order from an approved proposal or quote: one item, or
+   * for Gripr Lab modeling the model and, when printed, the print.
+   */
   async createCustomOrder(
     tx: DatabaseExecutor,
     input: CustomOrderInput,
@@ -244,6 +335,10 @@ export class OrdersService {
       .insert(orders)
       .values({
         kind: 'custom',
+        store: input.store ?? 'gripr',
+        modeling: input.lab
+          ? newOrderModeling(input.lab.deliverable, input.lab.terms)
+          : null,
         customerId: input.customerId,
         ...this.contactColumns(input.contact, input.contact.contactPhone),
         status: pricing.status,
@@ -257,20 +352,26 @@ export class OrdersService {
       })
       .returning({ id: orders.id });
 
-    await tx.insert(orderItems).values({
-      orderId: order.id,
-      productId: input.productId ?? null,
-      productSlug: input.productSlug ?? null,
-      productName: input.productName,
-      imageUrl: input.imageUrl,
-      selectedOptions: input.selectedOptions ?? [],
-      specification: input.specification ?? null,
-      quantity: 1,
-      unitPrice: pricing.total,
-      lineTotal: pricing.total,
-      productionDaysMin: input.productionDaysMin,
-      productionDaysMax: input.productionDaysMax,
-    });
+    await tx.insert(orderItems).values(
+      input.lab && input.pricing.kind === 'staged'
+        ? modelingItems(order.id, input, input.lab, input.pricing)
+        : [
+            {
+              orderId: order.id,
+              productId: input.productId ?? null,
+              productSlug: input.productSlug ?? null,
+              productName: input.productName,
+              imageUrl: input.imageUrl,
+              selectedOptions: input.selectedOptions ?? [],
+              specification: input.specification ?? null,
+              quantity: 1,
+              unitPrice: pricing.total,
+              lineTotal: pricing.total,
+              productionDaysMin: input.productionDaysMin,
+              productionDaysMax: input.productionDaysMax,
+            },
+          ],
+    );
     await tx.insert(orderStatusHistory).values({
       orderId: order.id,
       toStatus: pricing.status,
@@ -281,7 +382,10 @@ export class OrdersService {
     return order.id;
   }
 
-  /** The customer approves the 3D model; production prepayment becomes due. */
+  /**
+   * The customer approves the 3D model; production prepayment becomes due,
+   * or an order of a model file only is completed.
+   */
   async approveModel(user: User, orderId: string): Promise<OrderDto> {
     await this.db.transaction(async (tx) => {
       const order = await this.lockOwnInStatus(
@@ -290,6 +394,15 @@ export class OrdersService {
         orderId,
         'model_review',
       );
+
+      if (order.modeling && !deliversPrint(order.modeling.deliverable)) {
+        await this.applyTransition(tx, order, 'completed', {
+          note: 'Модель погоджено клієнтом',
+          changedBy: user.id,
+        });
+        return;
+      }
+
       await this.applyTransition(tx, order, 'awaiting_production_payment', {
         note: 'Модель погоджено клієнтом',
         changedBy: user.id,
@@ -334,9 +447,74 @@ export class OrdersService {
         authorRole: 'customer',
         body: comment,
       });
+
+      if (order.modeling) {
+        await tx
+          .update(orders)
+          .set({ modeling: { ...order.modeling, pendingRevision: true } })
+          .where(eq(orders.id, orderId));
+      }
     });
 
     return this.getForCustomer(user, orderId);
+  }
+
+  /**
+   * Staff classify the changes a Gripr Lab customer asked for. A revision
+   * beyond the free ones is added to the order and paid before modeling
+   * continues.
+   */
+  async recordModelRevision(
+    orderId: string,
+    kind: RevisionKind,
+    changedBy: string,
+  ): Promise<AdminOrderDto> {
+    await this.db.transaction(async (tx) => {
+      const order = await this.lock(tx, orderId);
+
+      if (order.status !== 'modeling' || !order.modeling?.pendingRevision) {
+        throw new ConflictException(
+          'The order has no requested model changes to classify',
+        );
+      }
+
+      const { modeling, charge } = recordRevision(order.modeling, kind);
+      const label = kind === 'big' ? 'Велика' : 'Мала';
+      const charged = {
+        ...order,
+        modeling,
+        subtotal: order.subtotal + charge,
+        total: order.total + charge,
+        modelPaymentAmount: (order.modelPaymentAmount ?? 0) + charge,
+      };
+
+      await tx
+        .update(orders)
+        .set({
+          modeling,
+          subtotal: charged.subtotal,
+          total: charged.total,
+          modelPaymentAmount: charged.modelPaymentAmount,
+        })
+        .where(eq(orders.id, orderId));
+
+      if (charge > 0) {
+        await tx.insert(orderItems).values({
+          orderId,
+          itemKind: 'model',
+          productName: `${label} правка моделі`,
+          quantity: 1,
+          unitPrice: charge,
+          lineTotal: charge,
+        });
+        await this.applyTransition(tx, charged, 'awaiting_model_payment', {
+          note: `${label} правка понад безкоштовні: потрібна оплата`,
+          changedBy,
+        });
+      }
+    });
+
+    return this.get(orderId);
   }
 
   private async lockOwnInStatus(
@@ -372,9 +550,12 @@ export class OrdersService {
 
   async listForCustomer(
     user: User,
-    query: PaginationQueryDto,
+    query: StorePageQueryDto,
   ): Promise<OrderSummaryPageDto> {
-    const where = eq(orders.customerId, user.id);
+    const where = and(
+      eq(orders.customerId, user.id),
+      eq(orders.store, query.store),
+    );
     const [items, [{ total }]] = await Promise.all([
       this.db
         .select(this.summaryColumns())
@@ -386,7 +567,7 @@ export class OrdersService {
       this.db.select({ total: count() }).from(orders).where(where),
     ]);
 
-    return toPage(items, total, query);
+    return toPage(items.map(withReference), total, query);
   }
 
   async getForCustomer(user: User, orderId: string): Promise<OrderDto> {
@@ -421,7 +602,7 @@ export class OrdersService {
   }
 
   async list(query: AdminOrderListQueryDto): Promise<AdminOrderPageDto> {
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(orders.store, query.store)];
 
     if (query.status) conditions.push(eq(orders.status, query.status));
     if (query.kind) conditions.push(eq(orders.kind, query.kind));
@@ -434,16 +615,19 @@ export class OrdersService {
     if (query.q) {
       const q = query.q.trim();
       const pattern = `%${q}%`;
+      const reference = parseOrderReference(q);
       conditions.push(
         or(
           ilike(orders.contactPhone, pattern),
           ilike(orders.contactName, pattern),
-          /^\d{1,9}$/.test(q) ? eq(orders.number, Number(q)) : undefined,
+          reference && (!reference.store || reference.store === query.store)
+            ? eq(orders.number, reference.number)
+            : undefined,
         )!,
       );
     }
 
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
     const [items, [{ total }]] = await Promise.all([
       this.db
         .select({
@@ -459,15 +643,16 @@ export class OrdersService {
       this.db.select({ total: count() }).from(orders).where(where),
     ]);
 
-    return toPage(items, total, query);
+    return toPage(items.map(withReference), total, query);
   }
 
   async get(orderId: string): Promise<AdminOrderDto> {
     const order = await this.load(eq(orders.id, orderId));
 
     return {
-      ...order,
+      ...withReference(order),
       nextPayment: nextPayment(order),
+      modeling: toModelingDto(order.modeling),
       allowedTransitions: [...ORDER_TRANSITIONS[order.status]],
     };
   }
@@ -552,6 +737,12 @@ export class OrdersService {
     to: OrderStatus,
     { note = null, changedBy = null }: TransitionOptions,
   ): Promise<void> {
+    if (to === 'model_review' && order.modeling?.pendingRevision) {
+      throw new ConflictException(
+        'Classify the requested changes as a big or small revision first',
+      );
+    }
+
     try {
       assertTransition(order, to);
     } catch (error) {
@@ -576,6 +767,7 @@ export class OrdersService {
 
     if (to === 'cancelled') {
       await this.restock(tx, order.id);
+      await cancelOrderPrints(tx, order.id);
     }
   }
 
@@ -658,6 +850,7 @@ export class OrdersService {
   private summaryColumns() {
     return {
       id: orders.id,
+      store: orders.store,
       number: orders.number,
       kind: orders.kind,
       status: orders.status,
@@ -718,8 +911,9 @@ export class OrdersService {
     const { customer, customerId, adminNote, ...rest } = order;
 
     return {
-      ...rest,
+      ...withReference(rest),
       nextPayment: nextPayment(order),
+      modeling: toModelingDto(order.modeling),
       items: order.items.map((item) => ({
         ...item,
         productionSteps: item.productionSteps
@@ -750,4 +944,10 @@ export class OrdersService {
       })),
     };
   }
+}
+
+function withReference<T extends { store: Store; number: number }>(
+  order: T,
+): T & { reference: string } {
+  return { ...order, reference: orderReference(order.store, order.number) };
 }

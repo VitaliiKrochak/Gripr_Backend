@@ -18,7 +18,8 @@ Admin:
 
 - `GET /api/customers?q=&page=&pageSize=`: customers with `orderCount` and
   `totalPaid` (kopiykas). `q` searches phone, name, and email.
-- `GET /api/customers/:id`: a customer with their orders.
+- `GET /api/customers/:id`: a customer with their orders of both
+  [stores](../architecture.md#stores), each with `store` and `reference`.
 
 The phone number cannot be changed here; it always matches the phone used to
 sign in.

@@ -1,6 +1,12 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
-import { ORDER_STATUSES } from '../../integrations/database/database.schema';
-import type { OrderStatus } from '../../integrations/database/database.schema';
+import {
+  ORDER_STATUSES,
+  STORES,
+} from '../../integrations/database/database.schema';
+import type {
+  OrderStatus,
+  Store,
+} from '../../integrations/database/database.schema';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../../shared/pagination/pagination.query.dto';
 import { CustomerDto } from './customer.dto';
@@ -28,7 +34,11 @@ export class CustomerPageDto {
 
 export class CustomerOrderSummaryDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   number: number;
+  /** Number with the store prefix, e.g. `LAB-1043`. */
+  reference: string;
   @ApiProperty({ enum: ORDER_STATUSES })
   status: OrderStatus;
   total: number;

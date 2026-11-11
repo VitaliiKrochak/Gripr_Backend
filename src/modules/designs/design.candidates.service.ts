@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -18,6 +19,7 @@ import {
 } from '../../integrations/database/database.schema';
 import { toOffset, toPage } from '../../shared/pagination/pagination';
 import { ProductImagesService } from '../catalog/product.images.service';
+import { storeOfType } from '../catalog/product.stores';
 import { ProductsService } from '../catalog/products.service';
 import type { AdminProductDto } from '../catalog/dto/product.dto';
 import { DESIGN_LICENSE_INFO } from './design.license';
@@ -45,7 +47,10 @@ export class DesignCandidatesService {
   async list(
     query: DesignCandidateListQueryDto,
   ): Promise<AdminDesignCandidatePageDto> {
-    const conditions: SQL[] = [eq(designCandidates.status, query.status)];
+    const conditions: SQL[] = [
+      eq(designCandidates.store, query.store),
+      eq(designCandidates.status, query.status),
+    ];
 
     if (query.type) {
       conditions.push(eq(designCandidates.suggestedType, query.type));
@@ -82,6 +87,7 @@ export class DesignCandidatesService {
       this.db
         .select({
           id: designCandidates.id,
+          store: designCandidates.store,
           source: designCandidates.source,
           title: designCandidates.title,
           authorName: designCandidates.authorName,
@@ -125,6 +131,11 @@ export class DesignCandidatesService {
 
     if (candidate.status !== 'candidate') {
       throw new ConflictException('Only new candidates can be approved');
+    }
+    if (storeOfType(dto.type) !== candidate.store) {
+      throw new BadRequestException(
+        'The product type belongs to the other store',
+      );
     }
     if (candidate.ipRisk === 'blocked' && !dto.acknowledgeIpRisk) {
       throw new ConflictException(
@@ -247,6 +258,7 @@ function toAdminDto(candidate: DesignCandidate): AdminDesignCandidateDto {
 
   return {
     id: candidate.id,
+    store: candidate.store,
     source: candidate.source,
     sourceId: candidate.sourceId,
     sourceUrl: candidate.sourceUrl,
@@ -259,6 +271,8 @@ function toAdminDto(candidate: DesignCandidate): AdminDesignCandidateDto {
     licenseName: license.name,
     licenseUrl: license.url,
     attributionRequired: license.attributionRequired,
+    shareAlike: license.shareAlike,
+    derivativesAllowed: license.derivativesAllowed,
     previewUrl: candidate.previewUrl,
     embedUrl: candidate.embedUrl,
     likes: candidate.likes,

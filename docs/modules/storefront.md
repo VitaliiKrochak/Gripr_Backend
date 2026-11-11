@@ -4,6 +4,12 @@ The public, read-only view of the published catalog, the configurator quote,
 and recommendations. All routes are public. Only published products and
 collections are returned; drafts and archived records answer `404`.
 
+Every route takes `?store=` (`gripr` by default, or `lab`) and shows only
+that [store](../architecture.md#stores): products, collections, tags, types,
+and the price range of the other store are left out, and its product and
+collection pages answer `404`. Product details and cards include `store`.
+Lab filters have no metals or gemstones.
+
 ## Routes
 
 - `GET /api/storefront/home`: featured collections, hot, new, and featured
@@ -21,7 +27,12 @@ collections are returned; drafts and archived records answer `404`.
 - `GET /api/storefront/products/:slug`: product details with images, tags,
   specifications, available option values, `priceFrom`, `defaultQuote` for
   the default configuration, `characteristics` (see below), and
-  `designCredit` (see below).
+  `designCredit` (see below). Lab values also carry `heightMm`,
+  `scaleFactor`, `printFinish`, and `resin` (`code`, `name`, `kind`,
+  `colour`, `description`; no price). `pricedPerSelection` is `true` for
+  [print-priced](catalog.md#print-pricing) Lab products: their `basePrice`
+  and value `priceDelta` are 0, `priceFrom` is the cheapest combination, and
+  the client requests a quote for every selection.
 - `POST /api/storefront/products/:slug/quote` with
   `{ "optionValueIds": [...], "engravingText"? }`: price, price `breakdown`
   (manufacturing, metal, stones, options, weight), and production time for a
@@ -56,7 +67,8 @@ customers.
 
 `designCredit` is `null` for our own products. For products made from an
 open-license design it contains the model `title`, `author`, `authorUrl`,
-`sourceName` (Sketchfab), `sourceUrl`, `license` (`cc0` or `cc_by`),
+`sourceName` (Sketchfab, Thingiverse, Printables, or MyMiniFactory),
+`sourceUrl`, `license` (`cc0`, `cc_by`, `cc_by_sa`, or `cc_by_nd`),
 `licenseName`, `licenseUrl`, and `attributionRequired`. The frontend must show
 it publicly on the product page.
 

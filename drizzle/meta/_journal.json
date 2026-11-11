@@ -50,6 +50,62 @@
       "when": 1793821266977,
       "tag": "0006_metal_price_per_gram_override",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794336612805,
+      "tag": "0007_stores",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794337529723,
+      "tag": "0008_prints",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794338543191,
+      "tag": "0009_print_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794339035022,
+      "tag": "0010_lab_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794339912169,
+      "tag": "0011_print_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794340677661,
+      "tag": "0012_print_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794342062502,
+      "tag": "0013_lab_modeling",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794347198458,
+      "tag": "0014_design_sources",
+      "breakpoints": true
     }
   ]
 }

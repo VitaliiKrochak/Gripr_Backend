@@ -17,6 +17,14 @@ export const PRODUCT_TYPE_SIZE_SYSTEMS: Record<ProductType, SizeSystem> = {
   brooch: 'none',
   cufflinks: 'none',
   other: 'none',
+  miniature: 'none',
+  figurine: 'none',
+  bust: 'none',
+  statue: 'none',
+  terrain: 'none',
+  diorama: 'none',
+  prop: 'none',
+  other_print: 'none',
 };
 
 export function sizeSystemOf(type: ProductType): SizeSystem {

@@ -106,6 +106,28 @@ describe('SketchfabService', () => {
     expect(fetchSpy.mock.calls[0][0]).toContain('cursor=48');
   });
 
+  it('reads one model by uid', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      Response.json({
+        uid: 'f00d',
+        name: 'Knight',
+        viewerUrl: 'https://sketchfab.com/3d-models/knight-f00d',
+        license: { label: 'CC Attribution' },
+        isDownloadable: true,
+      }),
+    );
+
+    expect(await service.getModel('f00d')).toMatchObject({
+      sourceId: 'f00d',
+      title: 'Knight',
+      licenseLabel: 'CC Attribution',
+      author: 'Unknown',
+    });
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      'https://sketchfab.test/v3/models/f00d',
+    );
+  });
+
   it('throws on HTTP errors', async () => {
     jest
       .spyOn(global, 'fetch')

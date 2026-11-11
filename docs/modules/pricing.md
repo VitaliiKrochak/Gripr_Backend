@@ -76,7 +76,12 @@ Stored values are merged over the defaults from the sheet
 Rates are UAH per troy ounce for metals and UAH per dollar. The effective
 rate is the manual rate, else the last NBU rate; the settings `usdRate` is the
 fallback for USD. A job at 06:00 Europe/Kyiv fetches NBU rates and reprices.
-Every rate change reprices auto-priced products.
+Every rate change reprices auto-priced products and refreshes the card
+prices of print-priced Lab products.
+
+`readUsdRate` (`usd.rate.ts`, also `ProductPricingService.usdRate`) returns
+the effective USD rate (manual, else NBU, else the settings `usdRate`); the
+[prints](prints.md) module uses it to convert printer prices bought in USD.
 
 ## Metals
 

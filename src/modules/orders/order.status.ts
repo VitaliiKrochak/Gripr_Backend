@@ -7,14 +7,21 @@ import { paymentThresholds } from './order.balance';
 /**
  * Catalog orders and legacy custom orders use `pending_payment` → `paid`.
  * Staged custom orders go through the 3D model, production prepayment, and
- * final payment statuses instead.
+ * final payment statuses instead. A paid model revision returns `modeling`
+ * to `awaiting_model_payment`; an order of a model file only completes after
+ * the model review.
  */
 export const ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   pending_payment: ['paid', 'cancelled'],
   paid: ['in_production', 'ready', 'cancelled', 'refunded'],
   awaiting_model_payment: ['modeling', 'cancelled'],
-  modeling: ['model_review', 'cancelled'],
-  model_review: ['modeling', 'awaiting_production_payment', 'cancelled'],
+  modeling: ['model_review', 'awaiting_model_payment', 'cancelled'],
+  model_review: [
+    'modeling',
+    'awaiting_production_payment',
+    'completed',
+    'cancelled',
+  ],
   awaiting_production_payment: ['in_production', 'cancelled'],
   in_production: ['awaiting_final_payment', 'ready', 'cancelled'],
   awaiting_final_payment: ['ready', 'cancelled'],
@@ -69,6 +76,26 @@ export function assertTransition(
     order.paidAmount < thresholds.model
   ) {
     throw new OrderTransitionError('The 3D model prepayment is not paid');
+  }
+
+  if (
+    order.status === 'modeling' &&
+    to === 'awaiting_model_payment' &&
+    order.paidAmount >= thresholds.model
+  ) {
+    throw new OrderTransitionError('Nothing more is due for the model');
+  }
+
+  if (order.status === 'model_review' && to === 'completed') {
+    if (order.total !== thresholds.model) {
+      throw new OrderTransitionError(
+        'Only orders of a model file complete after the model review',
+      );
+    }
+
+    if (order.paidAmount < order.total) {
+      throw new OrderTransitionError('The order is not fully paid');
+    }
   }
 
   if (

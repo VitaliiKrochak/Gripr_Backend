@@ -48,6 +48,127 @@ URL, are redirected by the frontend proxy to the visitor's language, so
 3. After sign-in, `GET /customers/me` returns the profile (created on first
    call).
 
+## Gripr and Gripr Lab
+
+The API serves two [stores](architecture.md#stores). Store-scoped calls take
+`?store=gripr` or `?store=lab` and use `gripr` when it is omitted, so the
+Gripr screens below work unchanged. For Lab screens pass `store=lab` to:
+
+- every `/storefront/*` call (product and collection pages of the other
+  store answer `404`);
+- `GET` and `DELETE /customers/me/cart`, `GET /customers/me/favorites`,
+  `GET /customers/me/orders`, and the checkout body
+  (`POST /customers/me/orders` with `"store": "lab"`);
+- admin lists: `/dashboard/summary`, `/products`, `/collections`, `/tags`,
+  `/orders`, `/production-stages`, `/custom-requests`, `/design-candidates`,
+  and the `store` field when creating a collection, tag, or production stage.
+
+Cart mutations return the cart of the changed line's store. Show orders by
+their `reference` (`GR-1042`, `LAB-1043`). Lab orders are paid the same way
+as Gripr orders (into the Lab LiqPay shop); `409` means the Lab shop is not
+configured on this server.
+
+Lab-only screens ([prints](modules/prints.md)):
+
+- Admin "Resins" and "Printers" tables with create, edit, and delete, at
+  `/resins` and `/printers`. A printer form takes purchase prices in the
+  chosen `costCurrency` (cents for USD); show `costs` (UAH, at `usdRate`)
+  next to them. Only one resin and one printer can be the default.
+- Admin "Print settings" form at `GET|PUT /print-settings`: material rates,
+  the consumables list, work, painting multipliers, modeling, fixed costs,
+  price, and the `bases` offered for print requests. Rates are fractions;
+  show them as percents.
+- The storefront resin picker and resin badges use
+  `GET /storefront/resins` (no prices).
+- The Lab product editor has a "Print" section instead of the jewelry
+  calculator: `print` with `mode`, `volumeMl`, `sizeMm`, and the slicer
+  `overrides`; the option values of Lab kinds take `heightMm` or
+  `scaleFactor`, `resinId`, `paintingMultiplier` (suggest 2 and 3 from the
+  print settings), and `printFinish`. "Prices of every combination" uses
+  `POST /print-pricing/product-preview` with the unsaved draft; a staff
+  calculator for one-off pieces uses `POST /print-pricing/calculate`.
+- The Lab product editor (existing products) uploads the staff model through
+  [model uploads](#model-uploads) at `POST /print-files` with `productId`,
+  lists them with `GET /print-files?productId=`, and offers "Use this model"
+  once a file is `analyzed`: save `print` with `printFileId`; the server
+  fills `volumeMl` and `sizeMm`. Show `warnings` and offer the download
+  (`GET /print-files/:id/download`). STEP files are `manual`: ask for the
+  volume and size (`PATCH /print-files/:id/measurements`).
+- Lab product pages with `pricedPerSelection: true` must not add up
+  `priceDelta` (it is 0): request
+  `POST /storefront/products/:slug/quote?store=lab` on every option change
+  and show its `unitPrice`. Show "від" with `priceFrom`, the resin name and
+  type, and the production days; never resin amounts or print time.
+- Admin "Print requests" queue at `GET /print-requests?status=` (submitted
+  and in review first). The request screen shows each model with its
+  `calculation` and file download, lets staff pick a printer, a painting
+  multiplier, and slicer overrides (`PATCH /print-requests/:id`, values at the
+  printed size; the response is the new calculation), and offers "Confirm"
+  (`POST /print-requests/:id/confirm`), "Request changes", and "Reject" with
+  a note, next to the conversation (`/print-requests/:id/messages`).
+- Admin Lab custom requests (`GET /custom-requests?store=lab`): the proposal
+  form takes a Lab specification (prefilled from the request) and
+  `modelingHours`, shows the calculated model price from the response, and
+  locks `productPrice` and `productionPrepayment` at 0 for a `file`
+  deliverable. On a Lab modeling order with `modeling.pendingRevision`, ask
+  staff to classify the requested changes as big or small
+  (`POST /orders/:id/model/revisions`) before "Send for review"; a paid
+  revision returns the order to model payment. Orders that deliver the file
+  get a "Model files" panel: upload through [model uploads](#model-uploads)
+  at `POST /orders/:id/files` and list `GET /orders/:id/files`.
+
+## Print your model
+
+The Lab "Print your model" flow ([print requests](modules/prints.md#print-requests)):
+
+1. Load `GET /storefront/print-options` and `GET /storefront/resins` for the
+   choices and limits.
+2. Upload models through [model uploads](#model-uploads). While the customer
+   chooses a height or scale, resin, finish, painting, and base per model,
+   call `POST /customers/me/print-requests/quote` (debounced) and show each
+   `unitPrice` or `priceError`, the printed `sizeMm`, and a warning when
+   `fitsPrinter` is `false` (staff split the model). Label the sum as an
+   estimate.
+3. Save the request (`POST` or `PATCH /customers/me/print-requests`), ask the
+   customer to confirm they may have the models printed (`rightsConfirmed`),
+   and submit it (`POST .../:id/submit`).
+4. "My print requests" lists `GET /customers/me/print-requests` with the
+   status, `staffNote` for returned or rejected requests, and the
+   conversation. A `confirmed` request shows `confirmedPrice` and
+   `priceValidUntil` with "Add to cart" (`POST .../:id/cart`; `409` means
+   the price expired and the Lab checks it again).
+5. The Lab cart shows `prints` next to `items`: models, prices, and options,
+   with "Remove" (`DELETE .../:id/cart`) but no quantity or option edits.
+   Order items with `itemKind: "print"` link to their request through
+   `printRequestId`.
+
+## Order a model
+
+The Lab "Order a model" flow ([Gripr Lab modeling](modules/custom.requests.md#gripr-lab-modeling)):
+
+1. Ask what to deliver (a printed piece, the model file, or both), the
+   height, and for printed pieces the resin, finish, painting, base, and
+   quantity (choices from `GET /storefront/print-options` and
+   `GET /storefront/resins`). Optionally upload the customer's own model
+   through [model uploads](#model-uploads) as the source file, and reference
+   images as in [Custom request](#custom-request).
+2. Submit `POST /customers/me/custom-requests` with `store: "lab"`, a print
+   `productType`, `description`, `referenceImages`, and `labSpecification`
+   (`deliverable`, `heightMm`, `resinId`, `finish`, `painted`, `baseCode`,
+   `quantity`, `sourceFileId`, `comments`). List them with
+   `GET /customers/me/custom-requests`.
+3. The proposal shows the model price, the print price (none for a file),
+   the included revisions from `revisionTerms` ("1 big and 2 small revisions
+   included; then 1 000 and 250 UAH"), and the production days. Accepting
+   works as for jewelry.
+4. The order page shows the model and print items, `modeling.freeBigRevisionsLeft`
+   and `freeSmallRevisionsLeft`, and, when the deliverable includes the file,
+   the files from `GET /customers/me/orders/:id/files`. "Download" calls
+   `GET /customers/me/orders/:id/files/:fileId` and shows the returned
+   `license` next to the link; `409` means the model is not approved or the
+   order is not fully paid yet. A file-only order is `completed` once the
+   model is approved.
+
 ## Storefront screens
 
 | Screen | Calls |
@@ -107,7 +228,7 @@ button that calls `POST /customers/me/cart/sets/:collectionSlug`.
 | Favorites | `GET /customers/me/favorites`, `PUT` or `DELETE /customers/me/favorites/:productId` |
 | Cart | `GET /customers/me/cart`, `POST /customers/me/cart/items`, `PATCH` or `DELETE /customers/me/cart/items/:itemId`, `DELETE /customers/me/cart` |
 | Profile | `GET` and `PATCH /customers/me` |
-| Orders | `GET /customers/me/orders`, `GET /customers/me/orders/:id`, `POST /customers/me/orders/:id/cancel`, `POST .../:id/model/approve`, `POST .../:id/model/request-changes`, `GET` and `POST .../:id/messages` |
+| Orders | `GET /customers/me/orders`, `GET /customers/me/orders/:id`, `POST /customers/me/orders/:id/cancel`, `POST .../:id/model/approve`, `POST .../:id/model/request-changes`, `GET` and `POST .../:id/messages`, `GET .../:id/files[/:fileId]` (Lab model files) |
 | Custom request | `GET /storefront/reference`, `POST /customers/me/uploads/signature`, `POST /customers/me/custom-requests`, `GET /customers/me/custom-requests[/:id]`, `POST .../:id/accept`, `POST .../:id/request-changes`, `POST .../:id/decline`, `GET` and `POST .../:id/messages` |
 
 Guests can browse and configure without signing in. Ask them to sign in when
@@ -218,6 +339,33 @@ Show:
    the API. Signatures expire after about an hour; request a new one per
    upload session.
 
+## Model uploads
+
+Gripr Lab models (STL, OBJ, 3MF, ZIP, STEP) go to Supabase Storage, not
+Cloudinary ([model files](modules/prints.md#model-files)):
+
+1. Check the extension and that the file is at most 50 MB in the browser
+   (suggest a ZIP or 3MF for bigger STLs), then call
+   `POST /customers/me/print-files` with `{ fileName, sizeBytes }`.
+2. Upload the bytes directly from the browser:
+
+   ```ts
+   await fetch(upload.uploadUrl, {
+     method: 'PUT',
+     headers: { 'content-type': file.type || 'application/octet-stream' },
+     body: file,
+   });
+   ```
+
+   or `supabase.storage.from('lab-models').uploadToSignedUrl(upload.storagePath, upload.uploadToken, file)`.
+3. Call `POST /customers/me/print-files/:id/complete`, then poll
+   `GET /customers/me/print-files/:id` every second or two while `status` is
+   `analyzing`. Show `volumeMl`, `sizeMm`, and `warnings` when `analyzed`,
+   `error` when `failed`, and "staff will measure it" when `manual`.
+4. `503` means uploads are not set up on this server. The browser may
+   measure the file itself for an instant preview, but prices always use the
+   server's measurement.
+
 ## Admin panel
 
 All admin routes require `app_metadata.role = "admin"`.
@@ -233,12 +381,12 @@ All admin routes require `app_metadata.role = "admin"`.
 | Product images | `POST /products/:id/images`, `PATCH` or `DELETE /products/:id/images/:imageId`, `PUT /products/:id/images/order`; upload with `folder: "products"` |
 | Product options | `POST /products/:id/option-groups`, `PATCH` or `DELETE .../option-groups/:groupId`, `POST .../option-groups/:groupId/values`, `PATCH` or `DELETE .../values/:valueId` |
 | Orders | `GET /orders?status=&kind=&createdFrom=&createdTo=&q=`, `GET /orders/:id` |
-| Order actions | `PATCH /orders/:id/status`, `PATCH /orders/:id/delivery` (TTN), `PATCH /orders/:id` (internal note), `POST /orders/:id/payments` (manual payment) |
+| Order actions | `PATCH /orders/:id/status`, `PATCH /orders/:id/delivery` (TTN), `PATCH /orders/:id` (internal note), `POST /orders/:id/payments` (manual payment), `POST /orders/:id/model/revisions` and `POST` or `GET /orders/:id/files` (Lab modeling) |
 | Production | `GET`, `POST`, `PATCH`, `DELETE /production-stages[/:id]`; `POST /orders/:orderId/items/:itemId/production-steps`, `PUT .../production-steps/order`, `PATCH` or `DELETE /production-steps/:id`; photos with `folder: "production"` |
-| Custom requests | `GET /custom-requests?status=&source=`, `GET /custom-requests/:id`, `PATCH /custom-requests/:id`, `POST /custom-requests/:id/proposals` |
+| Custom requests | `GET /custom-requests?store=&status=&source=`, `GET /custom-requests/:id`, `PATCH /custom-requests/:id`, `POST /custom-requests/:id/proposals` |
 | Messages | `GET` and `POST /orders/:id/messages`, `GET` and `POST /custom-requests/:id/messages`; attachments with `folder: "messages"` |
 | Customers | `GET /customers?q=`, `GET /customers/:id` |
-| Open designs | `GET /design-candidates?status=&type=&license=&ipRisk=&q=&sort=`, `GET /design-candidates/:id`, `POST /design-candidates/:id/approve`, `POST .../:id/reject`, `POST .../:id/restore`, `POST /design-candidates/import`, `GET /design-candidates/import/status` |
+| Open designs | `GET /design-candidates?store=&status=&type=&license=&ipRisk=&q=&sort=`, `GET /design-candidates/:id`, `POST /design-candidates/import-url`, `POST /design-candidates/:id/approve`, `POST .../:id/reject`, `POST .../:id/restore`, `POST /design-candidates/import`, `GET /design-candidates/import/status` |
 
 Admin workflow notes:
 
@@ -246,7 +394,14 @@ Admin workflow notes:
   preview it, then set `status: "published"`. Archive instead of deleting.
 - **Open designs:** approving a candidate returns a draft product; open its
   editor to set the price (publishing with a zero price answers `409`). Show
-  the product's `designCredit` read-only in the editor.
+  the product's `designCredit` read-only in the editor. The queue follows the
+  admin store switch (`store`). An "Import by link" form posts the link; for
+  Printables and MyMiniFactory links it also asks for the license (only the
+  licenses of the current store) and, after a `400` about an unreadable page,
+  the title and author. Show `shareAlike` ("share changes under the same
+  license") and `derivativesAllowed: false` ("print unchanged, no remixes")
+  on Lab candidates, and hide the Thingiverse source when the import status
+  has `thingiverseEnabled: false`.
 - **Configurator setup:** one editor with a single "Save product" button:
   manufacturing price, weight, stone groups, then one group per choice
   (metal, size, engraving, coating, processing, custom) with values ordered by

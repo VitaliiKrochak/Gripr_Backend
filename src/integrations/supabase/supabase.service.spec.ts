@@ -5,6 +5,7 @@ describe('SupabaseService', () => {
   const config: SupabaseConfig = {
     url: 'https://example.supabase.co',
     publishableKey: 'test-publishable-key',
+    secretKey: null,
   };
 
   afterEach(() => {

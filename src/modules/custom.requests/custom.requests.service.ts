@@ -32,9 +32,14 @@ import {
   configureProduct,
   ConfigurationError,
 } from '../catalog/product.configuration';
+import { isJewelryType, storeOfType } from '../catalog/product.stores';
 import { CustomersService } from '../customers/customers.service';
 import { customerUploadFolder } from '../media/media.folders';
+import { deliversPrint } from '../orders/order.modeling';
 import { OrdersService } from '../orders/orders.service';
+import { modelingPrice, revisionTerms } from '../prints/modeling.pricing';
+import { loadPrintContext } from '../prints/print.context';
+import { labPrintOptions, resolveLabSpecification } from './custom.request.lab';
 import { resolveSpecification } from './custom.request.specification';
 import { canTransitionCustomRequest } from './custom.request.status';
 import type {
@@ -50,6 +55,11 @@ import type {
   RequestProposalChangesDto,
   UpdateCustomRequestDto,
 } from './custom.request.dto';
+
+type ProposalTerms = Pick<
+  CustomProposal,
+  'specification' | 'labSpecification' | 'modelingHours' | 'revisionTerms'
+> & { modelingPrice: number | null };
 
 const customerColumns = {
   id: customers.id,
@@ -92,17 +102,57 @@ export class CustomRequestsService {
       throw new BadRequestException('budgetMin must not exceed budgetMax');
     }
 
-    const { specification, productId, optionValueIds, ...values } = dto;
+    const {
+      store = 'gripr',
+      specification,
+      labSpecification,
+      productId,
+      optionValueIds,
+      ...values
+    } = dto;
+
+    if (store === 'lab') {
+      if (!labSpecification) {
+        throw new BadRequestException(
+          'Describe the model to design in labSpecification',
+        );
+      }
+
+      if (specification || productId || optionValueIds?.length) {
+        throw new BadRequestException(
+          'Gripr Lab requests take labSpecification instead of a jewelry specification or product',
+        );
+      }
+    } else if (labSpecification) {
+      throw new BadRequestException(
+        'labSpecification is only for Gripr Lab requests',
+      );
+    }
+
     const customization = productId
       ? await this.customizationBase(productId, optionValueIds ?? [])
       : null;
     const productType = customization?.productType ?? values.productType;
-    const resolved = specification
-      ? await resolveSpecification(
-          this.db,
-          { ...specification, productType },
-          { activeOnly: true },
-        )
+
+    if (storeOfType(productType) !== store) {
+      throw new BadRequestException(
+        `A ${productType} cannot be requested from this store`,
+      );
+    }
+
+    const resolved =
+      specification && isJewelryType(productType)
+        ? await resolveSpecification(
+            this.db,
+            { ...specification, productType },
+            { activeOnly: true },
+          )
+        : null;
+    const resolvedLab = labSpecification
+      ? await resolveLabSpecification(this.db, labSpecification, {
+          customerId: user.id,
+          activeOnly: true,
+        })
       : null;
 
     const request = await this.db.transaction(async (tx) => {
@@ -111,8 +161,10 @@ export class CustomRequestsService {
         .insert(customRequests)
         .values({
           ...values,
+          store,
           productType,
           specification: resolved,
+          labSpecification: resolvedLab,
           ...(customization
             ? {
                 source: 'customization' as const,
@@ -178,6 +230,7 @@ export class CustomRequestsService {
       this.assertTransition(current.status, 'accepted');
       const proposal = await this.latestProposal(tx, id);
       const common = {
+        store: current.store,
         customerId: user.id,
         contact: { ...dto, contactPhone },
         imageUrl: current.referenceImages[0]?.url ?? null,
@@ -200,6 +253,14 @@ export class CustomRequestsService {
             productPrice: proposal.productPrice,
             productionPrepayment: proposal.productionPrepayment,
           },
+          lab:
+            proposal.labSpecification && proposal.revisionTerms
+              ? {
+                  deliverable: proposal.labSpecification.deliverable,
+                  terms: proposal.revisionTerms,
+                  printOptions: labPrintOptions(proposal.labSpecification),
+                }
+              : undefined,
           productionDaysMin: proposal.productionDaysMin,
           productionDaysMax: proposal.productionDaysMax,
         });
@@ -284,10 +345,10 @@ export class CustomRequestsService {
   async list(
     query: AdminCustomRequestListQueryDto,
   ): Promise<AdminCustomRequestPageDto> {
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(customRequests.store, query.store)];
     if (query.status) conditions.push(eq(customRequests.status, query.status));
     if (query.source) conditions.push(eq(customRequests.source, query.source));
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = and(...conditions);
     const [rows, [{ total }]] = await Promise.all([
       this.db
         .select({ request: customRequests, customer: customerColumns })
@@ -369,14 +430,22 @@ export class CustomRequestsService {
       );
     }
 
-    const specification = await resolveSpecification(
-      this.db,
-      dto.specification,
-      {
-        activeOnly: false,
-      },
-    );
-    const modelPrice = dto.requiresModel ? dto.modelPrice : 0;
+    if (
+      dto.requiresModel &&
+      dto.modelPrice === undefined &&
+      dto.modelingHours === undefined
+    ) {
+      throw new BadRequestException('Set modelPrice or modelingHours');
+    }
+
+    const request = await this.find(this.db, eq(customRequests.id, id));
+    const terms =
+      request.store === 'lab'
+        ? await this.labProposalTerms(request, dto)
+        : await this.griprProposalTerms(dto);
+    const modelPrice = !dto.requiresModel
+      ? 0
+      : (terms.modelingPrice ?? dto.modelPrice!);
 
     await this.db.transaction(async (tx) => {
       const current = await this.lock(tx, eq(customRequests.id, id));
@@ -399,7 +468,10 @@ export class CustomRequestsService {
         requestId: id,
         version: (version ?? 0) + 1,
         title: dto.title,
-        specification,
+        specification: terms.specification,
+        labSpecification: terms.labSpecification,
+        modelingHours: terms.modelingHours,
+        revisionTerms: terms.revisionTerms,
         requiresModel: dto.requiresModel,
         modelPrice,
         productPrice: dto.productPrice,
@@ -426,6 +498,90 @@ export class CustomRequestsService {
     return this.get(id);
   }
 
+  private async griprProposalTerms(
+    dto: CreateProposalDto,
+  ): Promise<ProposalTerms> {
+    if (dto.labSpecification || dto.modelingHours !== undefined) {
+      throw new BadRequestException(
+        'labSpecification and modelingHours are only for Gripr Lab proposals',
+      );
+    }
+
+    if (!dto.specification) {
+      throw new BadRequestException('Add the proposed specification');
+    }
+
+    if (dto.productPrice < 1) {
+      throw new BadRequestException('productPrice must be at least 1');
+    }
+
+    return {
+      specification: await resolveSpecification(this.db, dto.specification, {
+        activeOnly: false,
+      }),
+      labSpecification: null,
+      modelingHours: null,
+      modelingPrice: null,
+      revisionTerms: null,
+    };
+  }
+
+  /**
+   * Gripr Lab proposals always include a model, priced from the modeling
+   * hours when given; a model delivered only as a file has no product price.
+   */
+  private async labProposalTerms(
+    request: CustomRequest,
+    dto: CreateProposalDto,
+  ): Promise<ProposalTerms> {
+    if (dto.specification) {
+      throw new BadRequestException(
+        'Gripr Lab proposals take labSpecification instead of a jewelry specification',
+      );
+    }
+
+    if (!dto.labSpecification) {
+      throw new BadRequestException('Add the proposed labSpecification');
+    }
+
+    if (!dto.requiresModel) {
+      throw new BadRequestException(
+        'Gripr Lab proposals always include a 3D model',
+      );
+    }
+
+    if (deliversPrint(dto.labSpecification.deliverable)) {
+      if (dto.productPrice < 1) {
+        throw new BadRequestException(
+          'productPrice must be at least 1 when the model is printed',
+        );
+      }
+    } else if (dto.productPrice !== 0 || dto.productionPrepayment !== 0) {
+      throw new BadRequestException(
+        'A model delivered only as a file has no productPrice or productionPrepayment',
+      );
+    }
+
+    const [labSpecification, { settings }] = await Promise.all([
+      resolveLabSpecification(this.db, dto.labSpecification, {
+        customerId: request.customerId,
+        activeOnly: false,
+      }),
+      loadPrintContext(this.db),
+    ]);
+
+    return {
+      specification: null,
+      labSpecification,
+      modelingHours: dto.modelingHours ?? null,
+      modelingPrice:
+        dto.modelingHours === undefined
+          ? null
+          : modelingPrice(dto.modelingHours, settings),
+      revisionTerms: revisionTerms(settings),
+    };
+  }
+
   private async customizationBase(productId: string, optionValueIds: string[]) {
     const product = (await this.catalog.loadConfigurable([productId])).get(
       productId,
@@ -433,6 +589,12 @@ export class CustomRequestsService {
 
     if (!product) {
       throw new BadRequestException('The product is not available');
+    }
+
+    if (!isJewelryType(product.type)) {
+      throw new BadRequestException(
+        'Gripr Lab products cannot be customized through a custom request yet',
+      );
     }
 
     try {
@@ -553,6 +715,9 @@ export class CustomRequestsService {
       status: proposal.status,
       title: proposal.title,
       specification: proposal.specification,
+      labSpecification: proposal.labSpecification,
+      modelingHours: proposal.modelingHours,
+      revisionTerms: proposal.revisionTerms,
       requiresModel: proposal.requiresModel,
       modelPrice: proposal.modelPrice,
       productPrice: proposal.productPrice,
@@ -577,6 +742,7 @@ export class CustomRequestsService {
 
     return {
       id: request.id,
+      store: request.store,
       status: request.status,
       source: request.source,
       product: request.productName
@@ -595,6 +761,7 @@ export class CustomRequestsService {
       desiredMetal: request.desiredMetal,
       ringSize: request.ringSize,
       specification: request.specification,
+      labSpecification: request.labSpecification,
       quote:
         request.quotePrice === null
           ? null

@@ -10,7 +10,10 @@ import {
   payments,
   products,
 } from '../../integrations/database/database.schema';
-import type { OrderStatus } from '../../integrations/database/database.schema';
+import type {
+  OrderStatus,
+  Store,
+} from '../../integrations/database/database.schema';
 import type { DashboardSummaryDto } from './dashboard.dto';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -19,7 +22,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export class DashboardService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
-  async summary(now = new Date()): Promise<DashboardSummaryDto> {
+  /** Figures of one store; the customer count covers the shared accounts. */
+  async summary(store: Store, now = new Date()): Promise<DashboardSummaryDto> {
     const since = new Date(now.getTime() - 30 * DAY_MS);
     const [
       statusCounts,
@@ -32,6 +36,7 @@ export class DashboardService {
       this.db
         .select({ status: orders.status, total: count() })
         .from(orders)
+        .where(eq(orders.store, store))
         .groupBy(orders.status),
       this.db
         .select({
@@ -39,20 +44,29 @@ export class DashboardService {
           last30Days: sql<number>`coalesce(sum(${payments.amount}) filter (where ${payments.paidAt} >= ${since.toISOString()}), 0)::int`,
         })
         .from(payments)
-        .where(eq(payments.status, 'success')),
+        .innerJoin(orders, eq(orders.id, payments.orderId))
+        .where(and(eq(payments.status, 'success'), eq(orders.store, store))),
       this.db
         .select({ newCustomRequests: count() })
         .from(customRequests)
-        .where(eq(customRequests.status, 'new')),
+        .where(
+          and(
+            eq(customRequests.status, 'new'),
+            eq(customRequests.store, store),
+          ),
+        ),
       this.db
         .select({ publishedProducts: count() })
         .from(products)
-        .where(eq(products.status, 'published')),
+        .where(
+          and(eq(products.status, 'published'), eq(products.store, store)),
+        ),
       this.db
         .select({ lowStockProducts: count() })
         .from(products)
         .where(
           and(
+            eq(products.store, store),
             eq(products.status, 'published'),
             eq(products.availability, 'in_stock'),
             lte(products.stockQuantity, 1),

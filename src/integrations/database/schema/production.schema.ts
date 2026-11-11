@@ -8,7 +8,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { appSchema, ImageAsset, timestamps } from './common.schema';
+import { appSchema, ImageAsset, storeEnum, timestamps } from './common.schema';
 import { orderItems } from './orders.schema';
 
 export const PRODUCTION_STEP_STATES = [
@@ -26,6 +26,7 @@ export const productionStepState = appSchema.enum(
 
 export const productionStages = appSchema.table('production_stages', {
   id: uuid('id').primaryKey().defaultRandom(),
+  store: storeEnum('store').notNull().default('gripr'),
   code: text('code').notNull().unique(),
   name: text('name').notNull(),
   description: text('description'),

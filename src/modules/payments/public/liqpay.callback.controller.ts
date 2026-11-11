@@ -20,10 +20,11 @@ export class PublicLiqPayCallbackController {
   @ApiConsumes('application/x-www-form-urlencoded')
   @ApiOperation({
     summary: 'LiqPay server-to-server payment status callback',
-    description: 'Called by LiqPay only; the signature is verified.',
+    description:
+      'Called by LiqPay only. The signature is verified with the private key of each store account; the matching account must be the one the payment was started with.',
   })
   @ApiOkResponse({ description: 'Callback accepted' })
   async callback(@Body() dto: LiqPayCallbackDto): Promise<void> {
-    await this.paymentsService.handleLiqPayCallback(dto.data, dto.signature);
+    await this.paymentsService.handleCallback(dto.data, dto.signature);
   }
 }

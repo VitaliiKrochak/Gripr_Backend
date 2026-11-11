@@ -16,6 +16,7 @@ import type {
   CustomerListQueryDto,
   CustomerPageDto,
 } from './customer.admin.dto';
+import { orderReference } from '../orders/order.reference';
 import type { UpdateCustomerDto } from './customer.dto';
 
 @Injectable()
@@ -89,6 +90,7 @@ export class CustomersService {
     const customerOrders = await this.db
       .select({
         id: orders.id,
+        store: orders.store,
         number: orders.number,
         status: orders.status,
         total: orders.total,
@@ -99,7 +101,13 @@ export class CustomersService {
       .where(eq(orders.customerId, id))
       .orderBy(desc(orders.createdAt));
 
-    return { ...customer, orders: customerOrders };
+    return {
+      ...customer,
+      orders: customerOrders.map((order) => ({
+        ...order,
+        reference: orderReference(order.store, order.number),
+      })),
+    };
   }
 
   private statsColumns() {

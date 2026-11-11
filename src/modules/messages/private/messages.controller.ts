@@ -72,4 +72,27 @@ export class PrivateMessagesController {
   ): Promise<MessageDto[]> {
     return this.messages.postToRequest(customer(user), id, dto);
   }
+
+  @Get('print-requests/:id/messages')
+  @ApiOperation({ summary: 'Conversation about my Gripr Lab print request' })
+  @ApiOkResponse({ type: [MessageDto] })
+  listForPrintRequest(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<MessageDto[]> {
+    return this.messages.listForPrintRequest(customer(user), id);
+  }
+
+  @Post('print-requests/:id/messages')
+  @ApiOperation({
+    summary: 'Write to the Lab about my print request',
+  })
+  @ApiCreatedResponse({ type: [MessageDto] })
+  postToPrintRequest(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateMessageDto,
+  ): Promise<MessageDto[]> {
+    return this.messages.postToPrintRequest(customer(user), id, dto);
+  }
 }

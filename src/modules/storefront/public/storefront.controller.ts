@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Public } from '../../../shared/decorators/public.decorator';
+import { StoreQueryDto } from '../../../shared/store/store.query.dto';
 import {
   ProductCardDto,
   ProductCardPageDto,
@@ -45,15 +46,15 @@ export class PublicStorefrontController {
     summary: 'Home page: featured collections, hot, new, and featured pieces',
   })
   @ApiOkResponse({ type: StorefrontHomeDto })
-  home(): Promise<StorefrontHomeDto> {
-    return this.storefront.home();
+  home(@Query() query: StoreQueryDto): Promise<StorefrontHomeDto> {
+    return this.storefront.home(query.store);
   }
 
   @Get('filters')
   @ApiOperation({ summary: 'Values available for catalog filters' })
   @ApiOkResponse({ type: StorefrontFiltersDto })
-  filters(): Promise<StorefrontFiltersDto> {
-    return this.storefront.filters();
+  filters(@Query() query: StoreQueryDto): Promise<StorefrontFiltersDto> {
+    return this.storefront.filters(query.store);
   }
 
   @Get('reference')
@@ -78,8 +79,11 @@ export class PublicStorefrontController {
   @Get('products/:slug')
   @ApiOperation({ summary: 'Product page with configurator options' })
   @ApiOkResponse({ type: StorefrontProductDto })
-  getProduct(@Param('slug') slug: string): Promise<StorefrontProductDto> {
-    return this.storefront.getProduct(slug);
+  getProduct(
+    @Param('slug') slug: string,
+    @Query() query: StoreQueryDto,
+  ): Promise<StorefrontProductDto> {
+    return this.storefront.getProduct(slug, query.store);
   }
 
   @Post('products/:slug/quote')
@@ -90,9 +94,10 @@ export class PublicStorefrontController {
   @ApiOkResponse({ type: QuoteDto })
   quote(
     @Param('slug') slug: string,
+    @Query() query: StoreQueryDto,
     @Body() dto: QuoteRequestDto,
   ): Promise<QuoteDto> {
-    return this.storefront.quote(slug, dto);
+    return this.storefront.quote(slug, query.store, dto);
   }
 
   @Get('products/:slug/recommendations')
@@ -101,10 +106,12 @@ export class PublicStorefrontController {
   @ApiOkResponse({ type: [ProductCardDto] })
   recommendations(
     @Param('slug') slug: string,
+    @Query() query: StoreQueryDto,
     @Query('limit', new DefaultValuePipe(8), ParseIntPipe) limit: number,
   ): Promise<ProductCardDto[]> {
     return this.storefront.recommendations(
       slug,
+      query.store,
       Math.min(Math.max(limit, 1), 24),
     );
   }
@@ -112,8 +119,10 @@ export class PublicStorefrontController {
   @Get('collections')
   @ApiOperation({ summary: 'Published collections' })
   @ApiOkResponse({ type: [StorefrontCollectionDto] })
-  listCollections(): Promise<StorefrontCollectionDto[]> {
-    return this.storefront.listCollections();
+  listCollections(
+    @Query() query: StoreQueryDto,
+  ): Promise<StorefrontCollectionDto[]> {
+    return this.storefront.listCollections(query.store);
   }
 
   @Get('collections/:slug')
@@ -121,7 +130,8 @@ export class PublicStorefrontController {
   @ApiOkResponse({ type: StorefrontCollectionDetailsDto })
   getCollection(
     @Param('slug') slug: string,
+    @Query() query: StoreQueryDto,
   ): Promise<StorefrontCollectionDetailsDto> {
-    return this.storefront.getCollection(slug);
+    return this.storefront.getCollection(slug, query.store);
   }
 }

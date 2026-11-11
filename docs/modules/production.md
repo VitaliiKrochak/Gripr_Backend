@@ -6,14 +6,17 @@ their order timeline (`GET /api/customers/me/orders/:id`, `items[].productionSte
 
 ## Stage dictionary (admin)
 
-- `GET /api/production-stages`
+- `GET /api/production-stages?store=`
 - `POST /api/production-stages`, `PATCH /api/production-stages/:id`
 - `DELETE /api/production-stages/:id`: only for stages no order uses (`409`
   otherwise); deactivate used stages instead.
 
-A stage has a unique `code`, a name, a customer-facing description, sort
-order, `defaultForCatalog`, `defaultForCustom`, and `isActive`. The seed adds
-(only missing codes, so existing stages are never overwritten):
+A stage has a `store` (`gripr` by default, set on creation and never
+changed), a `code` unique across both stores, a name, a customer-facing
+description, sort order, `defaultForCatalog`, `defaultForCustom`, and
+`isActive`. The list shows one [store](../architecture.md#stores) (`gripr` by
+default). The seed adds (only missing codes, so existing stages are never
+overwritten) these Gripr stages:
 
 | Code | Catalog | Custom |
 | --- | --- | --- |
@@ -33,10 +36,27 @@ order, `defaultForCatalog`, `defaultForCustom`, and `isActive`. The seed adds
 | `ready` | yes | yes |
 | `shipped`, `completed` | | |
 
+and these Gripr Lab stages:
+
+| Code | Catalog | Custom |
+| --- | --- | --- |
+| `lab-file-check` (file check and slicing) | yes | yes |
+| `lab-printing` | yes | yes |
+| `lab-washing-curing` | yes | yes |
+| `lab-support-removal` | yes | yes |
+| `lab-sanding` | yes | yes |
+| `lab-priming` | | |
+| `lab-painting` | | |
+| `lab-quality-check` | yes | yes |
+| `lab-packing` | yes | yes |
+
+Priming and painting are added by staff to painted pieces.
+
 ## Production steps (admin)
 
 - `POST /api/orders/:orderId/items/:itemId/production-steps` with
-  `{ "stageIds"? }`: adds steps to an item. Without `stageIds`, the active
+  `{ "stageIds"? }`: adds steps to an item. Only stages of the order's store
+  can be used (`400` otherwise). Without `stageIds`, the store's active
   stages marked as default for the order kind are used, plus `engraving` and
   `coating` when the item has engraving text or those options (or they are in
   its specification). For staged custom orders approved without a 3D model,

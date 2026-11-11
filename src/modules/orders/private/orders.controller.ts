@@ -19,7 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { User } from '@supabase/supabase-js';
 import { CurrentUser } from '../../../shared/decorators/current.user.decorator';
-import { PaginationQueryDto } from '../../../shared/pagination/pagination.query.dto';
+import { StorePageQueryDto } from '../../../shared/store/store.query.dto';
 import { CheckoutDto } from '../dto/checkout.dto';
 import {
   ModelChangesDto,
@@ -51,7 +51,7 @@ export class PrivateOrdersController {
   @ApiOkResponse({ type: OrderSummaryPageDto })
   list(
     @CurrentUser() user: User,
-    @Query() query: PaginationQueryDto,
+    @Query() query: StorePageQueryDto,
   ): Promise<OrderSummaryPageDto> {
     return this.ordersService.listForCustomer(user, query);
   }

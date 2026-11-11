@@ -51,8 +51,11 @@ export class MessageDto {
   attachments: ImageDto[];
   @ApiProperty({ type: MessageStageDto, nullable: true })
   stage: MessageStageDto | null;
-  /** `request` for messages written before the order existed. */
-  @ApiProperty({ enum: ['order', 'request'] })
-  thread: 'order' | 'request';
+  /**
+   * `request` for messages written before the order existed;
+   * `print_request` for a Gripr Lab print request.
+   */
+  @ApiProperty({ enum: ['order', 'request', 'print_request'] })
+  thread: 'order' | 'request' | 'print_request';
   createdAt: Date;
 }

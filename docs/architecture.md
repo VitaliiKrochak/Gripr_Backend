@@ -23,8 +23,10 @@ src/
     messages/              # customer-workshop conversations per order/request
     delivery/              # Nova Poshta city and branch lookup
     dashboard/             # admin summary
-    designs/               # open-license Sketchfab import and review queue
+    designs/               # open-license model import (both stores) and review queue
     pricing/               # price calculator, NBU rates, auto-priced products
+    prints/                # Gripr Lab resins, printers, print settings, model files, print requests
+      mesh/                # pure STL/OBJ/3MF/ZIP measurement and its worker thread
     health/
   shared/                  # reusable building blocks, no Nest modules
     decorators/
@@ -43,8 +45,9 @@ src/
     nbu/                   # National Bank of Ukraine exchange rates
     novaposhta/
     sketchfab/             # public model search
-    supabase/
+    supabase/              # Auth token checks and Storage (model files)
     telegram/              # Telegram Gateway API
+    thingiverse/           # thing search and details (app token)
     turbosms/              # Viber with SMS fallback
   swagger.ts               # OpenAPI setup and documentation access
   app.module.ts
@@ -105,6 +108,63 @@ the backend independently authorizes every administrative operation with
 `AdminGuard`. Hiding a screen or receiving a frontend session DTO is never
 treated as operation access control.
 
+## Stores
+
+One API serves two stores on the same site: **Gripr** (jewelry, `gripr`) and
+**Gripr Lab** (resin-printed miniatures and figurines, `lab`). Customers have
+one account for both; administrators are the same `admin` users and switch
+the admin panel between the stores.
+
+The store is a column (`app.store` enum, default `gripr`), not a copy of the
+backend:
+
+- `products`, `collections`, `tags`, `production_stages`, `orders`,
+  `custom_requests`, and `design_candidates` have `store`. Metals, gemstones,
+  and finishing operations are Gripr reference data; resins, printers, and
+  print settings ([prints](modules/prints.md)) are Gripr Lab reference data.
+  Neither kind has a `store` column.
+- Printer purchase prices may be in USD; the prints module converts them with
+  `readUsdRate` from the pricing module (manual, NBU, or settings rate), so
+  the pricing module stays the single source of exchange rates.
+- Jewelry prices add up (base, metal, stones, option surcharges), so
+  auto-priced jewelry stores calculated surcharges. Lab print prices do not
+  (resin grows with the cube of the size), so print-priced Lab products are
+  priced live per selection: readers that configure products
+  (`ProductCatalogService.loadConfigurable` for the cart and checkout, the
+  storefront product and quote, `refreshPriceFrom`) wrap them with
+  `withPrintPricing` from `src/modules/prints/print.context.ts`, which sets
+  `ConfigurableProduct.selectionPrice`.
+- A product's store follows from its type (`src/modules/catalog/product.stores.ts`):
+  jewelry types belong to Gripr, print types (`miniature`, `figurine`, `bust`,
+  `statue`, `terrain`, `diorama`, `prop`, `other_print`) to Gripr Lab. Each
+  store has its own configurator option kinds. Collections, tags, and
+  production stages get their store on creation and keep it.
+- Every storefront, customer, and admin list takes `?store=` (`gripr` when
+  omitted, so existing clients keep working) through `StoreQueryDto` or
+  `StorePageQueryDto` from `src/shared/store`. Records of the other store are
+  not listed, and storefront pages of the other store answer `404`.
+- Cart lines and favorites take their store from the product. The cart is
+  read, cleared, and checked out per store, so one order never mixes stores
+  while the other store's lines stay in the cart.
+- Orders share one number sequence and are shown with a store prefix
+  (`GR-1042`, `LAB-1043`, see `order.reference.ts`).
+- Each store is paid into its own LiqPay shop; Lab orders answer `409` when
+  the Lab shop keys are not configured (see [Payments](#payments)).
+
+- The Lab cart also holds confirmed print requests of customers' own models;
+  checkout orders them with the catalog lines in one order (`order_items`
+  with `itemKind: "print"`). Cart and orders call plain functions of
+  `src/modules/prints/print.requests.cart.ts` rather than a Nest dependency.
+- Custom requests, proposals, and custom orders carry the store. Gripr Lab
+  requests describe a model to design with a Lab specification; their orders
+  hold a `model` item (and a `print` item when printed), count big and small
+  revisions in `orders.modeling`, and deliver model files owned by the order
+  (`print_files.order_id`). Orders call the pure helpers of
+  `src/modules/orders/order.modeling.ts`; the prints module serves the files.
+
+Deferred Lab work (the MyMiniFactory API, product license records) is listed
+in [`lab.plan.md`](lab.plan.md).
+
 ## Admin role
 
 An administrator has `app_metadata.role` set to `admin` on their Supabase user.
@@ -118,6 +178,12 @@ provide a public endpoint that lets a user promote their own account.
 client has one responsibility: verify the access token received from the BFF
 and return the trusted Supabase user to `AuthGuard`. NestJS does not create,
 refresh, revoke, or store sessions and never receives the refresh token.
+
+`SupabaseStorageService` uses the server-only `SUPABASE_SECRET_KEY` for the
+private `lab-models` bucket (created on first use, 50 MB per file). It signs
+direct browser uploads (valid two hours) and short download URLs, checks the
+stored object size, downloads files for analysis, and removes them. The
+secret key is never sent to browsers; without it model uploads answer `503`.
 
 Next.js owns sign-up, sign-in, refresh, sign-out, and the frontend-host
 `HttpOnly` cookies. For an operation, the BFF forwards only the access cookie.
@@ -207,12 +273,17 @@ the same transaction.
 - **Nova Poshta** provides city and branch lookup for checkout. Orders store
   the chosen refs and names, and the TTN once shipped.
 - **Telegram Gateway** and **TurboSMS** deliver sign-in codes.
-- **Sketchfab** search supplies open-license jewelry model metadata to the
-  [designs](modules/designs.md) importer. Approved previews are copied into
+- **Sketchfab** and **Thingiverse** supply open-license model metadata to the
+  [designs](modules/designs.md) importer; Printables and MyMiniFactory pages
+  are read only when staff import a model by link. Approved previews are copied into
   Cloudinary server-side with `CloudinaryService.uploadFromUrl()`.
 - **NBU** (National Bank of Ukraine) publishes official USD and precious
   metal rates without a key; the [pricing](modules/pricing.md) module stores
   them for the price calculator.
+- **Supabase Storage** keeps Gripr Lab model files in a private bucket; see
+  [Supabase](#supabase) and [model files](modules/prints.md#model-files).
+  Uploaded files are untrusted: they are parsed only in a worker thread with
+  a time and memory limit, never executed, and never served publicly.
 
 ## Scheduled jobs
 
@@ -224,22 +295,34 @@ executes them; a job must tolerate that or guard itself. The jobs are:
   run lock and is disabled with `DESIGN_IMPORT_ENABLED=false`;
 - the market rate refresh (06:00 Europe/Kyiv), which stores NBU rates and
   reprices auto-priced products in one transaction; running it twice only
-  repeats the same idempotent update.
+  repeats the same idempotent update;
+- the model file cleanup (03:30 Europe/Kyiv), which deletes abandoned uploads,
+  old customer files no print request or Lab custom request needs, and files
+  whose owner was deleted, and fails stalled analyses; deleting twice is harmless;
+- the print price expiry (03:45 Europe/Kyiv), which returns print requests
+  confirmed more than 14 days ago to staff review; running it twice changes
+  nothing more.
 
 ## Payments
 
-Orders are paid through LiqPay Checkout:
+Orders are paid through LiqPay Checkout. Each store has its own LiqPay shop
+(Gripr Lab's keys are optional); `PaymentsService` reaches it through the
+`PaymentProvider` interface, whose only implementation wraps the LiqPay
+integration.
 
 1. The customer asks the API to start a payment for an order. The API decides
    what is due (the full amount, the custom-order deposit, a staged
-   prepayment, or the remaining balance), creates a pending `payments` row, and returns signed `data` and
-   `signature` for the LiqPay checkout form. The LiqPay `order_id` is the
-   payment id.
+   prepayment, or the remaining balance), creates a pending `payments` row
+   whose `merchant` is the order's store, and returns `data` and `signature`
+   for the LiqPay checkout form, signed with that store's keys. The LiqPay
+   `order_id` is the payment id.
 2. The browser posts the form to LiqPay; after paying, LiqPay returns the
    customer to `LIQPAY_RESULT_URL?orderId=...`.
 3. LiqPay posts the result to `POST /api/payments/liqpay/callback` on
-   `PUBLIC_API_URL`. The callback is verified (SHA3-256, or SHA-1 for legacy
-   accounts), processed in a transaction with the payment row locked, and is
+   `PUBLIC_API_URL`. The signature (SHA3-256, or SHA-1 for legacy accounts)
+   is checked with each shop's private key before anything is read; the
+   matching shop must be the payment's `merchant`, otherwise `400`. The
+   callback is processed in a transaction with the payment row locked and is
    idempotent. A success whose amount or currency does not match the payment
    is recorded as a failure.
 4. A successful payment increases the order's `paidAmount` and moves a
@@ -247,7 +330,8 @@ Orders are paid through LiqPay Checkout:
    payment stage it covers).
 
 Fiscal receipts are issued by LiqPay's software cash register (ПРРО): when
-`LIQPAY_RRO_GOOD_ID` is configured, the checkout data carries the receipt
+the shop's receipt good (`LIQPAY_RRO_GOOD_ID` or `LIQPAY_LAB_RRO_GOOD_ID`) is
+configured, the checkout data carries the receipt
 lines (`rro_info`) and LiqPay fiscalizes the payment after it succeeds.
 
 Administrators can also record payments received outside LiqPay.
@@ -260,8 +344,8 @@ Order status transitions are defined in one place,
 ```text
 pending_payment             -> paid | cancelled
 awaiting_model_payment      -> modeling | cancelled
-modeling                    -> model_review | cancelled
-model_review                -> modeling | awaiting_production_payment | cancelled
+modeling                    -> model_review | awaiting_model_payment | cancelled
+model_review                -> modeling | awaiting_production_payment | completed | cancelled
 awaiting_production_payment -> in_production | cancelled
 paid                        -> in_production | ready | cancelled | refunded
 in_production               -> awaiting_final_payment | ready | cancelled
@@ -277,7 +361,9 @@ from the stage dictionary. Custom pieces start as custom requests (or
 customizations of catalog products); the workshop sends versioned proposals,
 and approving one creates a `custom` order paid in stages: 3D model, then
 production prepayment, then the remainder. The customer's original request
-and every proposal version are kept unchanged.
+and every proposal version are kept unchanged. A paid model revision returns
+a Gripr Lab order from `modeling` to `awaiting_model_payment`, and an order
+of a model file only goes from `model_review` to `completed`.
 
 ## Swagger
 
@@ -300,8 +386,10 @@ they do not create an application user or grant access to private API endpoints.
 Unit tests (`*.spec.ts` next to the code) cover pure business logic such as
 pricing, order transitions, and signatures. End-to-end tests in `test/` boot the
 full application against an in-process PGlite Postgres database with the real
-migrations and seed applied. Supabase, Telegram Gateway, TurboSMS, Nova
-Poshta, and (where needed) Sketchfab, Cloudinary, and NBU are replaced with test
-doubles; no network access or Docker is needed.
+migrations and seed applied. Supabase (Auth and Storage, the latter by the
+in-memory `test/support/storage.fake.ts`), Telegram Gateway, TurboSMS, Nova
+Poshta, and (where needed) Sketchfab, Thingiverse, Cloudinary, and NBU are replaced with test
+doubles; no network access or Docker is needed. Model fixtures (cubes as STL,
+OBJ, 3MF, and ZIP) are built in memory by `test/support/mesh.fixtures.ts`.
 PGlite requires Node's `--experimental-vm-modules` flag, which the
 `test:e2e` script sets.

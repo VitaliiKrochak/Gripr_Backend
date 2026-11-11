@@ -15,11 +15,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
-  PRODUCT_TYPES,
+  JEWELRY_PRODUCT_TYPES,
   SPECIFICATION_MODES,
 } from '../../integrations/database/database.schema';
 import type {
-  ProductType,
+  JewelryProductType,
   SpecificationMode,
 } from '../../integrations/database/database.schema';
 
@@ -83,9 +83,9 @@ export class SpecificationExtraDto {
  * workshop proposals, and custom order items.
  */
 export class JewelrySpecificationDto {
-  @ApiProperty({ enum: PRODUCT_TYPES })
-  @IsIn(PRODUCT_TYPES)
-  productType: ProductType;
+  @ApiProperty({ enum: JEWELRY_PRODUCT_TYPES })
+  @IsIn(JEWELRY_PRODUCT_TYPES)
+  productType: JewelryProductType;
 
   /** `recommend`: the customer asks the workshop to choose the metal. */
   @ApiProperty({ enum: ['specified', 'recommend'] })

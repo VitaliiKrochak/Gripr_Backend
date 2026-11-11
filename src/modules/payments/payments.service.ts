@@ -15,10 +15,12 @@ import {
   orders,
   payments,
 } from '../../integrations/database/database.schema';
-import { LiqPayService } from '../../integrations/liqpay/liqpay.service';
 import { nextPayment } from '../orders/order.balance';
+import { orderReference } from '../orders/order.reference';
 import { OrdersService } from '../orders/orders.service';
 import type { ManualPaymentDto, PaymentCheckoutDto } from './payment.dto';
+import { PAYMENT_PROVIDER } from './payment.provider';
+import type { PaymentProvider } from './payment.provider';
 import { receiptLines } from './payment.receipt';
 import { nextPaymentStatus } from './payment.status';
 
@@ -36,11 +38,14 @@ export class PaymentsService {
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
-    private readonly liqPay: LiqPayService,
+    @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly orders: OrdersService,
   ) {}
 
-  /** Starts a LiqPay payment for whatever the order currently expects. */
+  /**
+   * Starts an online payment for whatever the order currently expects,
+   * into the account of the order's store.
+   */
   async createCheckout(
     user: User,
     orderId: string,
@@ -52,6 +57,12 @@ export class PaymentsService {
 
     if (!order) {
       throw new NotFoundException('Order not found');
+    }
+
+    if (!this.provider.isAvailable(order.store)) {
+      throw new ConflictException(
+        'Online payment is not set up for this store yet',
+      );
     }
 
     const due = nextPayment(order);
@@ -72,18 +83,24 @@ export class PaymentsService {
         : null;
     const [payment] = await this.db
       .insert(payments)
-      .values({ orderId, type: due.type, amount: due.amount })
+      .values({
+        orderId,
+        type: due.type,
+        amount: due.amount,
+        merchant: order.store,
+        provider: this.provider.name,
+      })
       .returning();
 
     return {
       paymentId: payment.id,
       type: payment.type,
       amount: payment.amount,
-      ...this.liqPay.createCheckout({
+      ...this.provider.startPayment(payment.merchant, {
         paymentId: payment.id,
         orderId,
         amount: payment.amount,
-        description: `${PAYMENT_LABELS[due.type]} замовлення №${order.number}`,
+        description: `${PAYMENT_LABELS[due.type]} замовлення ${orderReference(order.store, order.number)}`,
         receipt: {
           lines: receiptLines(payment.amount, items),
           emails: order.contactEmail ? [order.contactEmail] : [],
@@ -92,9 +109,12 @@ export class PaymentsService {
     };
   }
 
-  /** Applies a verified LiqPay callback; safe to receive repeatedly. */
-  async handleLiqPayCallback(data: string, signature: string): Promise<void> {
-    const callback = this.liqPay.parseCallback(data, signature);
+  /**
+   * Applies a verified provider callback; safe to receive repeatedly. The
+   * account that signed it must be the one the payment was started with.
+   */
+  async handleCallback(data: string, signature: string): Promise<void> {
+    const callback = this.provider.verifyCallback(data, signature);
 
     if (!callback) {
       throw new BadRequestException('Invalid signature');
@@ -104,22 +124,31 @@ export class PaymentsService {
       const [payment] = await tx
         .select()
         .from(payments)
-        .where(eq(payments.id, callback.order_id))
+        .where(eq(payments.id, callback.paymentId))
         .for('update');
 
       if (!payment) {
-        this.logger.warn(`Callback for unknown payment ${callback.order_id}`);
+        this.logger.warn(`Callback for unknown payment ${callback.paymentId}`);
         return;
       }
 
-      let outcome = this.liqPay.outcome(callback.status);
-      const amountMatches =
-        callback.currency === 'UAH' &&
-        Math.round(Number(callback.amount) * 100) === payment.amount;
-
-      if (outcome === 'success' && !amountMatches) {
+      if (
+        payment.merchant !== callback.merchant ||
+        payment.provider !== this.provider.name
+      ) {
         this.logger.error(
-          `Payment ${payment.id} amount mismatch: ${callback.amount} ${callback.currency}`,
+          `Payment ${payment.id} of ${payment.merchant} got a callback signed by ${callback.merchant}`,
+        );
+        throw new BadRequestException(
+          'The callback does not belong to this payment account',
+        );
+      }
+
+      let { outcome } = callback;
+
+      if (outcome === 'success' && callback.amount !== payment.amount) {
+        this.logger.error(
+          `Payment ${payment.id} amount mismatch: ${callback.amount ?? 'non-UAH'}`,
         );
         outcome = 'failure';
       }
@@ -129,12 +158,10 @@ export class PaymentsService {
       await tx
         .update(payments)
         .set({
-          providerStatus: callback.status,
+          providerStatus: callback.providerStatus,
           providerPaymentId:
-            callback.payment_id !== undefined
-              ? String(callback.payment_id)
-              : payment.providerPaymentId,
-          rawCallback: callback,
+            callback.providerPaymentId ?? payment.providerPaymentId,
+          rawCallback: callback.raw,
           ...(status ? { status } : {}),
           ...(status === 'success' ? { paidAt: new Date() } : {}),
         })
@@ -153,7 +180,7 @@ export class PaymentsService {
     });
   }
 
-  /** Records money received outside LiqPay. */
+  /** Records money received outside online payments, for the order's store. */
   async recordManual(
     orderId: string,
     dto: ManualPaymentDto,
@@ -169,6 +196,7 @@ export class PaymentsService {
       await tx.insert(payments).values({
         orderId,
         type: 'manual',
+        merchant: order.store,
         status: 'success',
         amount: dto.amount,
         note: dto.note,

@@ -8,6 +8,7 @@ import {
   metals,
   tags,
 } from '../../integrations/database/database.schema';
+import type { Store } from '../../integrations/database/database.schema';
 import { withConflictMapping } from '../../shared/errors/conflict.mapping';
 import type {
   CreateFinishingOptionDto,
@@ -184,10 +185,11 @@ export class ReferenceDataService {
     found(row, 'Finishing option not found');
   }
 
-  listTags(): Promise<TagDto[]> {
+  listTags(store: Store): Promise<TagDto[]> {
     return this.db
       .select()
       .from(tags)
+      .where(eq(tags.store, store))
       .orderBy(asc(tags.sortOrder), asc(tags.name));
   }
 

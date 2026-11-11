@@ -15,8 +15,10 @@ import {
 import * as schema from '../../src/integrations/database/database.schema';
 import { seedDatabase } from '../../src/integrations/database/database.seed';
 import { SupabaseService } from '../../src/integrations/supabase/supabase.service';
+import { SupabaseStorageService } from '../../src/integrations/supabase/supabase.storage.service';
 import { TelegramGatewayService } from '../../src/integrations/telegram/telegram.gateway.service';
 import { TurboSmsService } from '../../src/integrations/turbosms/turbosms.service';
+import { FakeStorage } from './storage.fake';
 
 export const TEST_ENV: Record<string, string> = {
   SUPABASE_URL: 'https://example.supabase.co',
@@ -35,6 +37,9 @@ export const TEST_ENV: Record<string, string> = {
   LIQPAY_RESULT_URL: 'https://example.com/checkout/result',
   PUBLIC_API_URL: 'https://api.example.com',
   LIQPAY_RRO_GOOD_ID: '777',
+  LIQPAY_LAB_PUBLIC_KEY: 'liqpay-lab-public',
+  LIQPAY_LAB_PRIVATE_KEY: 'liqpay-lab-private',
+  LIQPAY_LAB_RRO_GOOD_ID: '888',
   CLOUDINARY_CLOUD_NAME: 'demo-cloud',
   CLOUDINARY_API_KEY: 'cloudinary-key',
   CLOUDINARY_API_SECRET: 'cloudinary-secret',
@@ -71,6 +76,7 @@ export interface TestContext {
   db: Database;
   telegram: { isConfigured: jest.Mock; sendVerificationCode: jest.Mock };
   turboSms: { isConfigured: jest.Mock; sendHybrid: jest.Mock };
+  storage: FakeStorage;
   overrides: Map<unknown, unknown>;
   close: () => Promise<void>;
 }
@@ -104,7 +110,9 @@ export async function createTestApp(
     },
   };
 
+  const storage = new FakeStorage();
   const overrides = new Map<unknown, unknown>([
+    [SupabaseStorageService, storage],
     [DATABASE, db],
     [SupabaseService, supabase],
     [TelegramGatewayService, telegram],
@@ -129,6 +137,7 @@ export async function createTestApp(
     db,
     telegram,
     turboSms,
+    storage,
     overrides,
     close: async () => {
       await app.close();

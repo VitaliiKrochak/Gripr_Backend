@@ -23,7 +23,10 @@ import {
   productImages,
   products,
 } from '../../integrations/database/database.schema';
-import type { PublicationStatus } from '../../integrations/database/database.schema';
+import type {
+  PublicationStatus,
+  Store,
+} from '../../integrations/database/database.schema';
 import { qualified } from '../../integrations/database/database.sql';
 import { withConflictMapping } from '../../shared/errors/conflict.mapping';
 import type {
@@ -57,7 +60,12 @@ export class CollectionsService {
         productCount: sql<number>`(select count(*)::int from ${products} where ${qualified(products.collectionId)} = ${qualified(collections.id)})`,
       })
       .from(collections)
-      .where(query.status ? eq(collections.status, query.status) : undefined)
+      .where(
+        and(
+          eq(collections.store, query.store),
+          query.status ? eq(collections.status, query.status) : undefined,
+        ),
+      )
       .orderBy(asc(collections.sortOrder), asc(collections.name));
   }
 
@@ -96,8 +104,8 @@ export class CollectionsService {
         const [row] = await tx
           .insert(collections)
           .values({ ...values, ...publicationFields(values.status) })
-          .returning({ id: collections.id });
-        await replaceProducts(tx, row.id, productIds);
+          .returning({ id: collections.id, store: collections.store });
+        await replaceProducts(tx, row, productIds);
         return row.id;
       }),
       { unique: SLUG_CONFLICT },
@@ -121,7 +129,7 @@ export class CollectionsService {
             updatedAt: new Date(),
           })
           .where(eq(collections.id, id));
-        await replaceProducts(tx, id, productIds);
+        await replaceProducts(tx, current, productIds);
       }),
       { unique: SLUG_CONFLICT },
     );
@@ -142,21 +150,27 @@ export class CollectionsService {
 
 async function replaceProducts(
   tx: DatabaseExecutor,
-  collectionId: string,
+  collection: { id: string; store: Store },
   productIds: string[] | undefined,
 ): Promise<void> {
   if (!productIds) {
     return;
   }
 
+  const collectionId = collection.id;
+
   if (productIds.length) {
     const found = await tx
-      .select({ id: products.id })
+      .select({ id: products.id, store: products.store })
       .from(products)
       .where(inArray(products.id, productIds));
 
     if (found.length !== productIds.length) {
       throw new BadRequestException('Some products do not exist');
+    }
+
+    if (found.some((product) => product.store !== collection.store)) {
+      throw new BadRequestException('Some products belong to the other store');
     }
   }
 

@@ -1,19 +1,19 @@
 import type { Database } from '../../integrations/database/database.client';
 import type { SketchfabConfig } from '../../integrations/sketchfab/sketchfab.config';
-import type {
-  SketchfabModel,
-  SketchfabService,
-} from '../../integrations/sketchfab/sketchfab.service';
+import type { SketchfabService } from '../../integrations/sketchfab/sketchfab.service';
+import type { ThingiverseService } from '../../integrations/thingiverse/thingiverse.service';
 import {
   DesignImportInProgressError,
   DesignImportService,
   toDesignCandidate,
+  type DesignSourceModel,
 } from './design.import.service';
 
 const now = new Date('2026-01-01T00:00:00Z');
 
-function model(overrides: Partial<SketchfabModel> = {}): SketchfabModel {
+function model(overrides: Partial<DesignSourceModel> = {}): DesignSourceModel {
   return {
+    source: 'sketchfab',
     sourceId: 'abc123',
     title: 'Dragon Ring',
     description: 'Printable ring for casting',
@@ -35,7 +35,7 @@ function model(overrides: Partial<SketchfabModel> = {}): SketchfabModel {
 
 describe('toDesignCandidate', () => {
   it('maps a licensed jewelry model without review fields', () => {
-    const row = toDesignCandidate(model(), now);
+    const row = toDesignCandidate(model(), 'gripr', now);
 
     expect(row).toMatchObject({
       source: 'sketchfab',
@@ -55,21 +55,51 @@ describe('toDesignCandidate', () => {
     expect(
       toDesignCandidate(
         model({ licenseLabel: 'CC Attribution-NonCommercial' }),
+        'gripr',
         now,
       ),
     ).toBe('license');
-    expect(toDesignCandidate(model({ isDownloadable: false }), now)).toBe(
-      'not_downloadable',
-    );
-    expect(toDesignCandidate(model({ isAgeRestricted: true }), now)).toBe(
-      'age_restricted',
-    );
+    expect(
+      toDesignCandidate(model({ isDownloadable: false }), 'gripr', now),
+    ).toBe('not_downloadable');
+    expect(
+      toDesignCandidate(model({ isAgeRestricted: true }), 'gripr', now),
+    ).toBe('age_restricted');
     expect(
       toDesignCandidate(
         model({ title: 'Chair', tags: ['furniture'], description: null }),
+        'gripr',
         now,
       ),
     ).toBe('irrelevant');
+  });
+
+  it('maps Lab models and reviews no-derivatives licenses', () => {
+    const bust = model({
+      source: 'thingiverse',
+      sourceId: '4567',
+      title: 'Roman bust',
+      tags: ['bust', 'printable'],
+      licenseLabel: 'Creative Commons - Attribution - No Derivatives',
+    });
+
+    expect(toDesignCandidate(bust, 'lab', now)).toMatchObject({
+      store: 'lab',
+      source: 'thingiverse',
+      license: 'cc_by_nd',
+      suggestedType: 'bust',
+      ipRisk: 'review',
+      ipMatches: ['license: no derivatives'],
+    });
+    expect(toDesignCandidate(bust, 'gripr', now)).toBe('license');
+  });
+
+  it('skips the relevance threshold for staff imports', () => {
+    const chair = model({ title: 'Chair', tags: [], description: null });
+
+    expect(
+      toDesignCandidate(chair, 'gripr', now, { requireRelevance: false }),
+    ).toMatchObject({ relevanceScore: 0, suggestedType: null });
   });
 });
 
@@ -78,6 +108,9 @@ describe('DesignImportService', () => {
     baseUrl: 'https://api.sketchfab.com/v3',
     importEnabled: true,
   };
+  const thingiverse = {
+    isConfigured: () => false,
+  } as unknown as ThingiverseService;
 
   it('allows only one run at a time', async () => {
     let finish: () => void = () => undefined;
@@ -92,7 +125,7 @@ describe('DesignImportService', () => {
     const db = {
       select: () => ({ from: () => Promise.resolve([]) }),
     } as unknown as Database;
-    const service = new DesignImportService(db, config, sketchfab);
+    const service = new DesignImportService(db, config, sketchfab, thingiverse);
     service.requestDelayMs = 0;
 
     const running = service.start();
@@ -120,6 +153,7 @@ describe('DesignImportService', () => {
       {} as Database,
       { ...config, importEnabled: false },
       sketchfab as unknown as SketchfabService,
+      thingiverse,
     );
 
     await service.runNightly();

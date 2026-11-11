@@ -2,15 +2,19 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiCookieAuth,
   ApiOkResponse,
+  ApiConflictResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -23,7 +27,11 @@ import {
   UpdateOrderDeliveryDto,
   UpdateOrderDto,
 } from '../dto/order.admin.dto';
-import { AdminOrderDto, AdminOrderPageDto } from '../dto/order.dto';
+import {
+  AdminOrderDto,
+  AdminOrderPageDto,
+  ModelRevisionDto,
+} from '../dto/order.dto';
 import { OrdersService } from '../orders.service';
 
 @ApiTags('Admin: orders')
@@ -63,6 +71,24 @@ export class AdminOrdersController {
       note: dto.note,
       changedBy: user.id,
     });
+  }
+
+  @Post(':id/model/revisions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Classify the model changes a Gripr Lab customer requested; a paid revision returns the order to awaiting model payment',
+  })
+  @ApiOkResponse({ type: AdminOrderDto })
+  @ApiConflictResponse({
+    description: 'The order has no requested model changes to classify',
+  })
+  recordModelRevision(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ModelRevisionDto,
+  ): Promise<AdminOrderDto> {
+    return this.ordersService.recordModelRevision(id, dto.kind, user.id);
   }
 
   @Patch(':id/delivery')

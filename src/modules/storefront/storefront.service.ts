@@ -25,11 +25,11 @@ import {
   metals,
   optionGroups,
   optionValues,
-  PRODUCT_TYPES,
   products,
   productTags,
   tags,
 } from '../../integrations/database/database.schema';
+import type { Store } from '../../integrations/database/database.schema';
 import { qualified } from '../../integrations/database/database.sql';
 import { toOffset, toPage } from '../../shared/pagination/pagination';
 import type {
@@ -44,7 +44,10 @@ import {
   configureProduct,
   ConfigurationError,
   defaultSelection,
+  priceFrom,
 } from '../catalog/product.configuration';
+import { printContextFor, withPrintPricing } from '../prints/print.context';
+import type { PrintPriced } from '../prints/print.context';
 import {
   defaultProductOrder,
   isOpenModel,
@@ -54,6 +57,7 @@ import {
   loadProductDetails,
   type ProductDetails,
 } from '../catalog/products.service';
+import { STORE_PRODUCT_TYPES } from '../catalog/product.stores';
 import { ReferenceDataService } from '../catalog/reference.data.service';
 import { rankRecommendations } from './recommendations';
 import type {
@@ -69,6 +73,8 @@ import type {
   StorefrontReferenceDto,
 } from './storefront.dto';
 
+type PricedDetails = PrintPriced<ProductDetails>;
+
 const HOME_SECTION_SIZE = 8;
 const RECOMMENDATION_CANDIDATES = 500;
 const publishedCollection = eq(collections.status, 'published');
@@ -81,21 +87,22 @@ export class StorefrontService {
     private readonly referenceData: ReferenceDataService,
   ) {}
 
-  async home(): Promise<StorefrontHomeDto> {
+  async home(store: Store): Promise<StorefrontHomeDto> {
+    const inStore = eq(products.store, store);
     const [featuredCollections, hotProducts, newProducts, featuredProducts] =
       await Promise.all([
-        this.collections(eq(collections.isFeatured, true), 6),
+        this.collections(store, eq(collections.isFeatured, true), 6),
         this.catalog.cards({
-          where: eq(products.isHot, true),
+          where: and(inStore, eq(products.isHot, true)),
           limit: HOME_SECTION_SIZE,
         }),
         this.catalog.cards({
-          where: eq(products.isNew, true),
+          where: and(inStore, eq(products.isNew, true)),
           orderBy: [sql`${products.publishedAt} desc nulls last`],
           limit: HOME_SECTION_SIZE,
         }),
         this.catalog.cards({
-          where: eq(products.isFeatured, true),
+          where: and(inStore, eq(products.isFeatured, true)),
           limit: HOME_SECTION_SIZE,
         }),
       ]);
@@ -120,12 +127,14 @@ export class StorefrontService {
     return toPage(items, total, query);
   }
 
-  async getProduct(slug: string): Promise<StorefrontProductDto> {
-    return this.toStorefrontProduct(await this.findProduct(slug));
+  async getProduct(slug: string, store: Store): Promise<StorefrontProductDto> {
+    return this.toStorefrontProduct(await this.findProduct(slug, store));
   }
 
-  quote(slug: string, dto: QuoteRequestDto): Promise<QuoteDto> {
-    return this.findProduct(slug).then((product) => this.price(product, dto));
+  quote(slug: string, store: Store, dto: QuoteRequestDto): Promise<QuoteDto> {
+    return this.findProduct(slug, store).then((product) =>
+      this.price(product, dto),
+    );
   }
 
   /** Storefront view of a product in any status, for administrators. */
@@ -151,7 +160,7 @@ export class StorefrontService {
     };
   }
 
-  private price(product: ProductDetails, dto: QuoteRequestDto): QuoteDto {
+  private price(product: PricedDetails, dto: QuoteRequestDto): QuoteDto {
     try {
       return configureProduct(
         this.availableOnly(product),
@@ -169,9 +178,10 @@ export class StorefrontService {
 
   async recommendations(
     slug: string,
+    store: Store,
     limit: number,
   ): Promise<ProductCardDto[]> {
-    const product = await this.findProduct(slug);
+    const product = await this.findProduct(slug, store);
     const candidates = await this.db
       .select({
         id: products.id,
@@ -184,7 +194,7 @@ export class StorefrontService {
         isOpenModel,
       })
       .from(products)
-      .where(isPublished)
+      .where(and(isPublished, eq(products.store, store)))
       .orderBy(...defaultProductOrder())
       .limit(RECOMMENDATION_CANDIDATES);
 
@@ -203,12 +213,19 @@ export class StorefrontService {
     return this.catalog.cardsByIds(ids);
   }
 
-  listCollections(): Promise<StorefrontCollectionDto[]> {
-    return this.collections(undefined, 100);
+  listCollections(store: Store): Promise<StorefrontCollectionDto[]> {
+    return this.collections(store, undefined, 100);
   }
 
-  async getCollection(slug: string): Promise<StorefrontCollectionDetailsDto> {
-    const [collection] = await this.collections(eq(collections.slug, slug), 1);
+  async getCollection(
+    slug: string,
+    store: Store,
+  ): Promise<StorefrontCollectionDetailsDto> {
+    const [collection] = await this.collections(
+      store,
+      eq(collections.slug, slug),
+      1,
+    );
 
     if (!collection) {
       throw new NotFoundException('Collection not found');
@@ -243,12 +260,13 @@ export class StorefrontService {
     };
   }
 
-  async filters(): Promise<StorefrontFiltersDto> {
+  async filters(store: Store): Promise<StorefrontFiltersDto> {
+    const inStore = and(isPublished, eq(products.store, store));
     const [tagList, metalList, gemstoneList, collectionList, [range], types] =
       await Promise.all([
-        this.referenceData.listTags(),
-        this.referenceData.listMetals(true),
-        this.referenceData.listGemstones(true),
+        this.referenceData.listTags(store),
+        store === 'gripr' ? this.referenceData.listMetals(true) : [],
+        store === 'gripr' ? this.referenceData.listGemstones(true) : [],
         this.db
           .select({
             slug: collections.slug,
@@ -257,7 +275,7 @@ export class StorefrontService {
             setDiscountPercent: collections.setDiscountPercent,
           })
           .from(collections)
-          .where(publishedCollection)
+          .where(and(publishedCollection, eq(collections.store, store)))
           .orderBy(asc(collections.sortOrder), asc(collections.name)),
         this.db
           .select({
@@ -265,16 +283,16 @@ export class StorefrontService {
             max: sql<number>`coalesce(max(${products.priceFrom}), 0)::int`,
           })
           .from(products)
-          .where(isPublished),
+          .where(inStore),
         this.db
           .selectDistinct({ type: products.type })
           .from(products)
-          .where(isPublished),
+          .where(inStore),
       ]);
     const present = new Set(types.map((row) => row.type));
 
     return {
-      types: PRODUCT_TYPES.filter((type) => present.has(type)),
+      types: STORE_PRODUCT_TYPES[store].filter((type) => present.has(type)),
       tags: tagList,
       metals: metalList,
       gemstones: gemstoneList,
@@ -283,24 +301,31 @@ export class StorefrontService {
     };
   }
 
-  private async findProduct(slug: string): Promise<ProductDetails> {
+  private async findProduct(
+    slug: string,
+    store: Store,
+  ): Promise<PricedDetails> {
     const product = await this.catalog.findDetailsBySlug(slug);
 
-    if (!product) {
+    if (!product || product.store !== store) {
       throw new NotFoundException('Product not found');
     }
 
-    return product;
+    return this.withPrices(product);
   }
 
-  private async findAnyProduct(id: string): Promise<ProductDetails> {
+  private async findAnyProduct(id: string): Promise<PricedDetails> {
     const product = await loadProductDetails(this.db, eq(products.id, id));
 
     if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    return product;
+    return this.withPrices(product);
+  }
+
+  private async withPrices(product: ProductDetails): Promise<PricedDetails> {
+    return withPrintPricing(product, await printContextFor(this.db, [product]));
   }
 
   private characteristics(
@@ -343,7 +368,7 @@ export class StorefrontService {
   }
 
   /** Hides unavailable values so customers cannot select them. */
-  private availableOnly(product: ProductDetails): ProductDetails {
+  private availableOnly(product: PricedDetails): PricedDetails {
     return {
       ...product,
       optionGroups: product.optionGroups.map((group) => ({
@@ -353,8 +378,9 @@ export class StorefrontService {
     };
   }
 
-  private toStorefrontProduct(details: ProductDetails): StorefrontProductDto {
+  private toStorefrontProduct(details: PricedDetails): StorefrontProductDto {
     const product = this.availableOnly(details);
+    const perSelection = product.selectionPrice !== undefined;
     let defaultQuote: QuoteDto | null = null;
 
     try {
@@ -368,6 +394,7 @@ export class StorefrontService {
 
     return {
       id: product.id,
+      store: product.store,
       slug: product.slug,
       name: product.name,
       type: product.type,
@@ -380,8 +407,11 @@ export class StorefrontService {
       isHot: product.isHot,
       isNew: product.isNew,
       isFeatured: product.isFeatured,
-      basePrice: product.basePrice,
-      priceFrom: defaultQuote?.unitPrice ?? product.priceFrom,
+      basePrice: perSelection ? 0 : product.basePrice,
+      priceFrom: perSelection
+        ? priceFrom(product)
+        : (defaultQuote?.unitPrice ?? product.priceFrom),
+      pricedPerSelection: perSelection,
       productionDaysMin: product.productionDaysMin,
       productionDaysMax: product.productionDaysMax,
       seoTitle: product.seoTitle,
@@ -415,7 +445,19 @@ export class StorefrontService {
             stoneCarat: value.stoneCarat,
             stoneSizeMm: value.stoneSizeMm,
             sizeValue: value.sizeValue,
-            priceDelta: value.priceDelta,
+            heightMm: value.heightMm,
+            scaleFactor: value.scaleFactor,
+            resin: value.resin && {
+              id: value.resin.id,
+              code: value.resin.code,
+              name: value.resin.name,
+              kind: value.resin.kind,
+              colour: value.resin.colour,
+              description: value.resin.description,
+              isDefault: value.resin.isDefault,
+            },
+            printFinish: value.printFinish,
+            priceDelta: perSelection ? 0 : value.priceDelta,
             productionDaysDelta: value.productionDaysDelta,
             isDefault: value.isDefault,
           })),
@@ -426,6 +468,7 @@ export class StorefrontService {
   }
 
   private collections(
+    store: Store,
     where: SQL | undefined,
     limit: number,
   ): Promise<Array<StorefrontCollectionDto & { id: string }>> {
@@ -446,13 +489,13 @@ export class StorefrontService {
         productCount: sql<number>`(select count(*)::int from ${products} where ${qualified(products.collectionId)} = ${qualified(collections.id)} and ${qualified(products.status)} = 'published')`,
       })
       .from(collections)
-      .where(and(publishedCollection, where))
+      .where(and(publishedCollection, eq(collections.store, store), where))
       .orderBy(asc(collections.sortOrder), asc(collections.name))
       .limit(limit);
   }
 
   private productFilters(query: StorefrontProductQueryDto): SQL | undefined {
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(products.store, query.store)];
 
     if (query.collection) {
       conditions.push(
@@ -462,7 +505,11 @@ export class StorefrontService {
             .select({ id: collections.id })
             .from(collections)
             .where(
-              and(eq(collections.slug, query.collection), publishedCollection),
+              and(
+                eq(collections.slug, query.collection),
+                eq(collections.store, query.store),
+                publishedCollection,
+              ),
             ),
         ),
       );
@@ -533,7 +580,7 @@ export class StorefrontService {
       );
     }
 
-    return conditions.length ? and(...conditions) : undefined;
+    return and(...conditions);
   }
 
   private hasOption(

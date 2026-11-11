@@ -2,6 +2,7 @@ import type {
   OptionGroupKind,
   ProductType,
 } from '../../integrations/database/database.schema';
+import type { PrintFinish } from '../prints/print.settings';
 import { formatSize, sizeSystemOf } from './product.types';
 
 const GROUP_NAMES: Record<OptionGroupKind, string> = {
@@ -11,6 +12,11 @@ const GROUP_NAMES: Record<OptionGroupKind, string> = {
   engraving: 'Гравіювання',
   coating: 'Покриття',
   processing: 'Обробка',
+  scale: 'Розмір',
+  resin: 'Смола',
+  painting: 'Розфарбування',
+  base: 'Підставка',
+  finish: 'Обробка друку',
   custom: 'Опція',
 };
 
@@ -26,17 +32,27 @@ export function defaultGroupName(
   return GROUP_NAMES[kind];
 }
 
+const FINISH_NAMES: Record<PrintFinish, string> = {
+  raw: 'Без обробки',
+  supports_removed: 'Без підтримок',
+  sanded: 'Відшліфовано',
+};
+
 export interface LabelSource {
   label?: string | null;
   sizeValue?: number | null;
   stoneSizeMm?: number | null;
   stoneCarat?: number | null;
+  heightMm?: number | null;
+  scaleFactor?: number | null;
+  printFinish?: PrintFinish | null;
 }
 
 export interface LabelReferences {
   metal?: { name: string } | null;
   gemstone?: { name: string } | null;
   finishing?: { name: string } | null;
+  resin?: { name: string } | null;
 }
 
 /**
@@ -77,6 +93,16 @@ export function valueLabel(
     case 'coating':
     case 'processing':
       return refs.finishing?.name ?? null;
+    case 'scale':
+      return value.heightMm != null
+        ? `${value.heightMm} мм`
+        : value.scaleFactor != null
+          ? `× ${value.scaleFactor}`
+          : null;
+    case 'resin':
+      return refs.resin?.name ?? null;
+    case 'finish':
+      return value.printFinish ? FINISH_NAMES[value.printFinish] : null;
     default:
       return null;
   }

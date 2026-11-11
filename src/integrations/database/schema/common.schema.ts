@@ -1,11 +1,18 @@
 import { pgSchema, timestamp } from 'drizzle-orm/pg-core';
-import type { ProductType } from './catalog.schema';
+import type { PrintFinish } from '../../../modules/prints/print.settings';
+import type { JewelryProductType } from './catalog.schema';
 
 /**
  * Application tables live outside `public` so the Supabase Data API, which
  * is reachable with the publishable key, never exposes them.
  */
 export const appSchema = pgSchema('app');
+
+/** `gripr` sells jewelry; `lab` sells resin-printed figurines and models. */
+export const STORES = ['gripr', 'lab'] as const;
+export type Store = (typeof STORES)[number];
+
+export const storeEnum = appSchema.enum('store', STORES);
 
 export const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true })
@@ -45,7 +52,7 @@ export interface SpecificationStone {
  * customer asked for and what the workshop proposed.
  */
 export interface JewelrySpecification {
-  productType: ProductType;
+  productType: JewelryProductType;
   /** `recommend`: the customer asks the workshop to choose. */
   metalMode: Exclude<SpecificationMode, 'none'>;
   metal: SpecificationChoice | null;
@@ -62,4 +69,26 @@ export interface JewelrySpecification {
   requirements: string | null;
   /** Additional agreed parameters, e.g. `Ширина шинки: 2 мм`. */
   extras: Array<{ label: string; value: string }>;
+}
+
+/** What a Gripr Lab modeling order delivers: a printed piece, the file, or both. */
+export const MODEL_DELIVERABLES = ['print', 'file', 'print_and_file'] as const;
+export type ModelDeliverable = (typeof MODEL_DELIVERABLES)[number];
+
+/**
+ * A Gripr Lab model we design: what is delivered and, for printed pieces,
+ * how they are printed. Names are snapshots, like the jewelry specification.
+ */
+export interface LabSpecification {
+  deliverable: ModelDeliverable;
+  /** Printed height in mm. */
+  heightMm: number | null;
+  resin: SpecificationChoice | null;
+  finish: PrintFinish | null;
+  painted: boolean;
+  base: { code: string; name: string } | null;
+  quantity: number;
+  /** The customer's file to start from or fix (a Lab model file). */
+  sourceFile: { id: string; name: string } | null;
+  comments: string | null;
 }

@@ -9,8 +9,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { products } from './catalog.schema';
-import { appSchema, timestamps } from './common.schema';
-import type { JewelrySpecification } from './common.schema';
+import { appSchema, storeEnum, timestamps } from './common.schema';
+import type { JewelrySpecification, ModelDeliverable } from './common.schema';
 import { customers } from './customers.schema';
 
 export const ORDER_STATUSES = [
@@ -52,10 +52,47 @@ export const PAYMENT_STATUSES = [
 ] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
+/** Online payment services; manual payments have none. */
+export const PAYMENT_PROVIDERS = ['liqpay'] as const;
+export type PaymentProvider = (typeof PAYMENT_PROVIDERS)[number];
+
 export const orderStatus = appSchema.enum('order_status', ORDER_STATUSES);
 export const orderKind = appSchema.enum('order_kind', ORDER_KINDS);
+
+/** What an order line is: a catalog or custom piece, a print of the customer's model, or a model file. */
+export const ORDER_ITEM_KINDS = ['product', 'print', 'model'] as const;
+export type OrderItemKind = (typeof ORDER_ITEM_KINDS)[number];
+export const orderItemKind = appSchema.enum(
+  'order_item_kind',
+  ORDER_ITEM_KINDS,
+);
 export const paymentType = appSchema.enum('payment_type', PAYMENT_TYPES);
 export const paymentStatus = appSchema.enum('payment_status', PAYMENT_STATUSES);
+export const paymentProvider = appSchema.enum(
+  'payment_provider',
+  PAYMENT_PROVIDERS,
+);
+
+/** Revisions included in a Gripr Lab model price, and the price of more. */
+export interface RevisionTerms {
+  freeBig: number;
+  freeSmall: number;
+  /** Kopiykas per revision beyond the free ones. */
+  bigPrice: number;
+  smallPrice: number;
+}
+
+/** Gripr Lab modeling order: deliverable, revisions, and the file license. */
+export interface OrderModeling {
+  deliverable: ModelDeliverable;
+  terms: RevisionTerms;
+  bigRevisions: number;
+  smallRevisions: number;
+  /** The customer asked for changes that staff have not classified yet. */
+  pendingRevision: boolean;
+  /** Personal-use license of the delivered file; `null` without a file. */
+  license: string | null;
+}
 
 export interface SelectedOption {
   groupId: string;
@@ -111,6 +148,7 @@ export const orders = appSchema.table(
       .notNull()
       .unique()
       .generatedAlwaysAsIdentity({ startWith: 1001 }),
+    store: storeEnum('store').notNull().default('gripr'),
     kind: orderKind('kind').notNull(),
     status: orderStatus('status').notNull().default('pending_payment'),
     customerId: uuid('customer_id')
@@ -133,6 +171,8 @@ export const orders = appSchema.table(
     modelPaymentAmount: integer('model_payment_amount'),
     /** Staged custom orders: prepayment due before manufacturing. */
     productionPaymentAmount: integer('production_payment_amount'),
+    /** Gripr Lab modeling orders. */
+    modeling: jsonb('modeling').$type<OrderModeling>(),
     paidAmount: integer('paid_amount').notNull().default(0),
     productionDaysMin: integer('production_days_min').notNull().default(0),
     productionDaysMax: integer('production_days_max').notNull().default(0),
@@ -147,6 +187,7 @@ export const orders = appSchema.table(
   (table) => [
     index('orders_customer_idx').on(table.customerId),
     index('orders_status_idx').on(table.status),
+    index('orders_store_idx').on(table.store),
   ],
 );
 
@@ -157,6 +198,9 @@ export const orderItems = appSchema.table(
     orderId: uuid('order_id')
       .notNull()
       .references(() => orders.id, { onDelete: 'cascade' }),
+    itemKind: orderItemKind('item_kind').notNull().default('product'),
+    /** Print request the line was ordered from (`print` lines). */
+    printRequestId: uuid('print_request_id'),
     productId: uuid('product_id').references(() => products.id, {
       onDelete: 'set null',
     }),
@@ -213,6 +257,9 @@ export const payments = appSchema.table(
     type: paymentType('type').notNull(),
     status: paymentStatus('status').notNull().default('pending'),
     amount: integer('amount').notNull(),
+    /** The store whose account receives the money; fixed at creation. */
+    merchant: storeEnum('merchant').notNull().default('gripr'),
+    provider: paymentProvider('provider'),
     providerPaymentId: text('provider_payment_id'),
     providerStatus: text('provider_status'),
     rawCallback: jsonb('raw_callback').$type<Record<string, unknown>>(),

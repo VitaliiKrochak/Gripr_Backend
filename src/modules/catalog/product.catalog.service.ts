@@ -17,6 +17,7 @@ import {
 import type { ProductCardDto } from './dto/product.card.dto';
 import type { ProductSet } from './product.configuration';
 import { defaultProductOrder, ownProductsFirst } from './product.order';
+import { printContextFor, withPrintPricing } from '../prints/print.context';
 import { PRICING_RELATIONS } from './product.pricing';
 import { loadProductDetails } from './products.service';
 
@@ -98,8 +99,11 @@ export class ProductCatalogService {
     }
 
     const rows = await this.findConfigurable(productIds, executor);
+    const printContext = await printContextFor(executor, rows);
 
-    return new Map(rows.map((row) => [row.id, row]));
+    return new Map(
+      rows.map((row) => [row.id, withPrintPricing(row, printContext)]),
+    );
   }
 
   findConfigurable(productIds: string[], executor: DatabaseExecutor = this.db) {
@@ -164,6 +168,7 @@ export class ProductCatalogService {
   private cardColumns() {
     return {
       id: products.id,
+      store: products.store,
       slug: products.slug,
       name: products.name,
       type: products.type,

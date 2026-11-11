@@ -1,9 +1,12 @@
+import { eq } from 'drizzle-orm';
 import type { Database } from './database.client';
 import {
   finishingOptions,
   gemstones,
   metals,
+  printers,
   productionStages,
+  resins,
 } from './database.schema';
 import type { FinishingKind, MetalFamily } from './database.schema';
 
@@ -291,6 +294,117 @@ const PRODUCTION_STAGES = [
   },
 ];
 
+/** Gripr Lab resin printing; painting is added to an order by staff. */
+const LAB_PRODUCTION_STAGES = [
+  {
+    code: 'lab-file-check',
+    name: 'Перевірка файлу та нарізка',
+    description: 'Перевіряємо модель, ставимо підтримки й готуємо друк.',
+    sortOrder: 10,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+  {
+    code: 'lab-printing',
+    name: 'Друк',
+    description: 'Друкуємо фігурку на смоляному 3D-принтері.',
+    sortOrder: 20,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+  {
+    code: 'lab-washing-curing',
+    name: 'Промивання та засвічування',
+    description: 'Відмиваємо надлишки смоли й остаточно засвічуємо модель.',
+    sortOrder: 30,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+  {
+    code: 'lab-support-removal',
+    name: 'Видалення підтримок',
+    description: 'Знімаємо підтримки та зачищаємо сліди від них.',
+    sortOrder: 40,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+  {
+    code: 'lab-sanding',
+    name: 'Шліфування',
+    description: 'Шліфуємо поверхню перед ґрунтуванням або відправленням.',
+    sortOrder: 50,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+  {
+    code: 'lab-priming',
+    name: 'Ґрунтування',
+    description: 'Наносимо ґрунт під фарбування.',
+    sortOrder: 60,
+    defaultForCatalog: false,
+    defaultForCustom: false,
+  },
+  {
+    code: 'lab-painting',
+    name: 'Розфарбування',
+    description: 'Розфарбовуємо фігурку вручну.',
+    sortOrder: 70,
+    defaultForCatalog: false,
+    defaultForCustom: false,
+  },
+  {
+    code: 'lab-quality-check',
+    name: 'Контроль якості',
+    description: 'Фінальна перевірка перед пакуванням.',
+    sortOrder: 80,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+  {
+    code: 'lab-packing',
+    name: 'Пакування',
+    description: 'Надійно пакуємо фігурку для доставки.',
+    sortOrder: 90,
+    defaultForCatalog: true,
+    defaultForCustom: true,
+  },
+].map((stage) => ({ ...stage, store: 'lab' as const }));
+
+const RESIN = {
+  code: 'abs-like-grey',
+  name: 'ABS-подібна смола, сіра',
+  kind: 'abs_like',
+  colour: 'сірий',
+  description:
+    'Міцна смола для мініатюр і фігурок: добре тримає дрібні деталі й менш крихка за стандартну.',
+  densityGPerMl: 1.1,
+  pricePerKg: 70000,
+} as const;
+
+/** Purchase prices are USD cents. */
+const PRINTER = {
+  code: 'saturn-4-ultra-16k',
+  name: 'Elegoo Saturn 4 Ultra 16K',
+  buildXMm: 211.68,
+  buildYMm: 118.37,
+  buildZMm: 220,
+  layerHeightMm: 0.05,
+  secondsPerLayer: 5.5,
+  bottomLayers: 5,
+  bottomLayerSeconds: 30,
+  fixedMinutes: 10,
+  costCurrency: 'USD',
+  price: 56300,
+  lifetimeHours: 5000,
+  lcdPrice: 14100,
+  lcdLifetimeHours: 2000,
+  filmPrice: 600,
+  layersPerFilm: 60000,
+  electricityPerHour: 100,
+  plateFillRate: 0.7,
+  spacingMm: 5,
+} as const;
+
 /** Inserts reference data; existing rows (matched by `code`) are left untouched. */
 export async function seedDatabase(db: Database): Promise<void> {
   await db
@@ -312,6 +426,24 @@ export async function seedDatabase(db: Database): Promise<void> {
     .onConflictDoNothing({ target: finishingOptions.code });
   await db
     .insert(productionStages)
-    .values(PRODUCTION_STAGES)
+    .values([...PRODUCTION_STAGES, ...LAB_PRODUCTION_STAGES])
     .onConflictDoNothing({ target: productionStages.code });
+
+  const [defaultResin] = await db
+    .select({ id: resins.id })
+    .from(resins)
+    .where(eq(resins.isDefault, true));
+  await db
+    .insert(resins)
+    .values({ ...RESIN, isDefault: !defaultResin })
+    .onConflictDoNothing({ target: resins.code });
+
+  const [defaultPrinter] = await db
+    .select({ id: printers.id })
+    .from(printers)
+    .where(eq(printers.isDefault, true));
+  await db
+    .insert(printers)
+    .values({ ...PRINTER, isDefault: !defaultPrinter })
+    .onConflictDoNothing({ target: printers.code });
 }

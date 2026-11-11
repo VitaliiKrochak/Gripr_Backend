@@ -24,6 +24,7 @@ import {
   payments,
 } from './orders.schema';
 import { productionStages, productionSteps } from './production.schema';
+import { resins } from './prints.schema';
 
 export const collectionsRelations = relations(collections, ({ many }) => ({
   products: many(products),
@@ -96,6 +97,10 @@ export const optionValuesRelations = relations(optionValues, ({ one }) => ({
   finishing: one(finishingOptions, {
     fields: [optionValues.finishingId],
     references: [finishingOptions.id],
+  }),
+  resin: one(resins, {
+    fields: [optionValues.resinId],
+    references: [resins.id],
   }),
 }));
 

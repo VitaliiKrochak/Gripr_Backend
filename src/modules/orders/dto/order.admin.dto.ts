@@ -16,9 +16,9 @@ import type {
   OrderKind,
   OrderStatus,
 } from '../../../integrations/database/database.schema';
-import { PaginationQueryDto } from '../../../shared/pagination/pagination.query.dto';
+import { StorePageQueryDto } from '../../../shared/store/store.query.dto';
 
-export class AdminOrderListQueryDto extends PaginationQueryDto {
+export class AdminOrderListQueryDto extends StorePageQueryDto {
   @ApiProperty({ enum: ORDER_STATUSES, required: false })
   @IsOptional()
   @IsIn(ORDER_STATUSES)
@@ -41,7 +41,7 @@ export class AdminOrderListQueryDto extends PaginationQueryDto {
   @IsDate()
   createdTo?: Date;
 
-  /** Order number, contact phone, or contact name. */
+  /** Order number or reference (`LAB-1043`), contact phone, or name. */
   @IsOptional()
   @IsString()
   @MaxLength(100)

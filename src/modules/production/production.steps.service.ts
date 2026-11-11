@@ -16,7 +16,10 @@ import {
   productionStages,
   productionSteps,
 } from '../../integrations/database/database.schema';
-import type { OrderStatus } from '../../integrations/database/database.schema';
+import type {
+  OrderStatus,
+  Store,
+} from '../../integrations/database/database.schema';
 import type {
   CreateProductionStepsDto,
   UpdateProductionStepDto,
@@ -47,6 +50,7 @@ export class ProductionStepsService {
     const [item] = await this.db
       .select({
         id: orderItems.id,
+        store: orders.store,
         kind: orders.kind,
         status: orders.status,
         productionPaymentAmount: orders.productionPaymentAmount,
@@ -74,12 +78,19 @@ export class ProductionStepsService {
             sortOrder: productionStages.sortOrder,
           })
           .from(productionStages)
-          .where(inArray(productionStages.id, dto.stageIds))
+          .where(
+            and(
+              inArray(productionStages.id, dto.stageIds),
+              eq(productionStages.store, item.store),
+            ),
+          )
           .orderBy(asc(productionStages.sortOrder))
       : await this.templateStages(orderId, item);
 
     if (dto.stageIds && stages.length !== dto.stageIds.length) {
-      throw new BadRequestException('Unknown production stage');
+      throw new BadRequestException(
+        'Unknown production stage or a stage of the other store',
+      );
     }
 
     if (!stages.length) {
@@ -162,6 +173,7 @@ export class ProductionStepsService {
   private async templateStages(
     orderId: string,
     item: {
+      store: Store;
       kind: 'catalog' | 'custom';
       productionPaymentAmount: number | null;
       selectedOptions: Array<{ kind: string }>;
@@ -198,6 +210,7 @@ export class ProductionStepsService {
       .from(productionStages)
       .where(
         and(
+          eq(productionStages.store, item.store),
           eq(productionStages.isActive, true),
           or(
             item.kind === 'custom'

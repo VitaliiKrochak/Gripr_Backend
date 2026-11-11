@@ -7,6 +7,7 @@ import {
   favorites,
   products,
 } from '../../integrations/database/database.schema';
+import type { Store } from '../../integrations/database/database.schema';
 import type { ProductCardDto } from '../catalog/dto/product.card.dto';
 import {
   isPublished,
@@ -22,11 +23,12 @@ export class FavoritesService {
     private readonly catalog: ProductCatalogService,
   ) {}
 
-  async list(user: User): Promise<ProductCardDto[]> {
+  async list(user: User, store: Store): Promise<ProductCardDto[]> {
     const rows = await this.db
       .select({ productId: favorites.productId })
       .from(favorites)
-      .where(eq(favorites.customerId, user.id))
+      .innerJoin(products, eq(products.id, favorites.productId))
+      .where(and(eq(favorites.customerId, user.id), eq(products.store, store)))
       .orderBy(desc(favorites.createdAt));
 
     return this.catalog.cardsByIds(rows.map((row) => row.productId));

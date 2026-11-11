@@ -1,4 +1,9 @@
-import type { ProductType } from '../../integrations/database/database.schema';
+import type {
+  JewelryProductType,
+  LabProductType,
+  ProductType,
+  Store,
+} from '../../integrations/database/database.schema';
 
 export interface RelevanceSubject {
   title: string;
@@ -7,7 +12,7 @@ export interface RelevanceSubject {
 }
 
 export interface RelevanceResult {
-  /** 0-100; how likely the model is wearable jewelry. */
+  /** 0-100; how likely the model fits the store. */
   score: number;
   suggestedType: ProductType | null;
 }
@@ -15,7 +20,13 @@ export interface RelevanceResult {
 /** Models scoring below this are not stored at all. */
 export const MIN_RELEVANCE = 40;
 
-const TYPE_TERMS: Record<Exclude<ProductType, 'other'>, string[]> = {
+interface RelevanceProfile {
+  types: Partial<Record<ProductType, string[]>>;
+  general: string[];
+  negative: string[];
+}
+
+const JEWELRY_TYPES: Record<Exclude<JewelryProductType, 'other'>, string[]> = {
   ring: ['ring', 'rings', 'signet', 'engagement ring', 'wedding ring'],
   earrings: ['earring', 'earrings', 'ear stud', 'studs', 'hoop earrings'],
   pendant: ['pendant', 'charm', 'amulet', 'medallion', 'locket', 'talisman'],
@@ -26,41 +37,99 @@ const TYPE_TERMS: Record<Exclude<ProductType, 'other'>, string[]> = {
   cufflinks: ['cufflink', 'cufflinks', 'cuff links'],
 };
 
-const GENERAL_TERMS = [
-  'jewelry',
-  'jewellery',
-  'jewel',
-  'gemstone',
-  'gem',
-  'diamond',
-  'gold',
-  'silver',
-];
+const PRINT_TYPES: Record<Exclude<LabProductType, 'other_print'>, string[]> = {
+  miniature: [
+    'miniature',
+    'miniatures',
+    'mini',
+    'minis',
+    '28mm',
+    '32mm',
+    '54mm',
+    'tabletop',
+    'wargame',
+    'wargaming',
+  ],
+  figurine: ['figurine', 'figure', 'statuette', 'collectible'],
+  bust: ['bust'],
+  statue: ['statue', 'sculpture'],
+  terrain: ['terrain', 'scenery', 'ruins', 'dungeon tiles', 'wargame terrain'],
+  diorama: ['diorama', 'vignette'],
+  prop: ['prop', 'props', 'replica prop'],
+};
 
-const NEGATIVE_TERMS = [
-  'game asset',
-  'game ready',
-  'low poly',
-  'lowpoly',
-  'character',
-  'figurine',
-  'miniature',
-  'animation',
-  'animated',
-  'rigged',
-  'environment',
-  'vehicle',
-  'weapon',
-  'building',
-  'scene',
-  'boxing ring',
-  'onion ring',
-  'key ring',
-  'keyring',
-  'piston ring',
-  'ring light',
-  'o-ring',
-];
+const PROFILES: Record<Store, RelevanceProfile> = {
+  gripr: {
+    types: JEWELRY_TYPES,
+    general: [
+      'jewelry',
+      'jewellery',
+      'jewel',
+      'gemstone',
+      'gem',
+      'diamond',
+      'gold',
+      'silver',
+    ],
+    negative: [
+      'game asset',
+      'game ready',
+      'low poly',
+      'lowpoly',
+      'character',
+      'figurine',
+      'miniature',
+      'animation',
+      'animated',
+      'rigged',
+      'environment',
+      'vehicle',
+      'weapon',
+      'building',
+      'scene',
+      'boxing ring',
+      'onion ring',
+      'key ring',
+      'keyring',
+      'piston ring',
+      'ring light',
+      'o-ring',
+    ],
+  },
+  lab: {
+    types: PRINT_TYPES,
+    general: [
+      '3d print',
+      '3d printable',
+      'printable',
+      'print ready',
+      'resin',
+      'resin print',
+      'sla',
+      'presupported',
+      'pre-supported',
+      'supported',
+      'stl',
+    ],
+    negative: [
+      'game asset',
+      'game ready',
+      'low poly',
+      'lowpoly',
+      'rigged',
+      'animation',
+      'animated',
+      'hdri',
+      'texture',
+      'environment',
+      'scene',
+      'interior',
+      'jewelry',
+      'jewellery',
+      'ring',
+    ],
+  },
+};
 
 const WEIGHTS = {
   type: { title: 40, tags: 25, description: 10 },
@@ -78,8 +147,15 @@ function contains(text: string, term: string): boolean {
   return text.includes(` ${term} `);
 }
 
-/** Keyword scoring over title, tags and description. */
-export function scoreRelevance(subject: RelevanceSubject): RelevanceResult {
+/**
+ * Keyword scoring over title, tags and description: wearable jewelry for
+ * Gripr, printable miniatures, figurines, and terrain for Gripr Lab.
+ */
+export function scoreRelevance(
+  subject: RelevanceSubject,
+  store: Store = 'gripr',
+): RelevanceResult {
+  const profile = PROFILES[store];
   const fields: Record<Field, string> = {
     title: normalize(subject.title),
     tags: normalize(subject.tags.join(' , ')),
@@ -93,7 +169,7 @@ export function scoreRelevance(subject: RelevanceSubject): RelevanceResult {
   let bestType: ProductType | null = null;
   let bestTypeScore = 0;
 
-  for (const [type, terms] of Object.entries(TYPE_TERMS)) {
+  for (const [type, terms] of Object.entries(profile.types)) {
     const typeScore = fieldNames.reduce(
       (sum, field) => sum + (hits(terms, field) ? WEIGHTS.type[field] : 0),
       0,
@@ -108,8 +184,8 @@ export function scoreRelevance(subject: RelevanceSubject): RelevanceResult {
   score += bestTypeScore;
 
   for (const field of fieldNames) {
-    if (hits(GENERAL_TERMS, field)) score += WEIGHTS.general[field];
-    if (hits(NEGATIVE_TERMS, field)) score -= WEIGHTS.negative[field];
+    if (hits(profile.general, field)) score += WEIGHTS.general[field];
+    if (hits(profile.negative, field)) score -= WEIGHTS.negative[field];
   }
 
   return {

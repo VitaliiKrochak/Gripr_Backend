@@ -3,6 +3,7 @@ import { check, index, jsonb, text, uuid } from 'drizzle-orm/pg-core';
 import { appSchema, ImageAsset, timestamps } from './common.schema';
 import { customRequests } from './custom.requests.schema';
 import { orders } from './orders.schema';
+import { printRequests } from './print.requests.schema';
 import { productionStages } from './production.schema';
 
 export const MESSAGE_AUTHOR_ROLES = ['customer', 'staff'] as const;
@@ -25,6 +26,10 @@ export const messages = appSchema.table(
       () => customRequests.id,
       { onDelete: 'cascade' },
     ),
+    printRequestId: uuid('print_request_id').references(
+      () => printRequests.id,
+      { onDelete: 'cascade' },
+    ),
     authorId: uuid('author_id').notNull(),
     authorRole: messageAuthorRole('author_role').notNull(),
     body: text('body').notNull().default(''),
@@ -40,9 +45,10 @@ export const messages = appSchema.table(
   (table) => [
     index('messages_order_idx').on(table.orderId),
     index('messages_custom_request_idx').on(table.customRequestId),
+    index('messages_print_request_idx').on(table.printRequestId),
     check(
       'messages_single_thread',
-      sql`(${table.orderId} is null) <> (${table.customRequestId} is null)`,
+      sql`num_nonnulls(${table.orderId}, ${table.customRequestId}, ${table.printRequestId}) = 1`,
     ),
   ],
 );

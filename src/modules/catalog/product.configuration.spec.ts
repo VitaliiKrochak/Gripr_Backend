@@ -253,6 +253,58 @@ describe('weight-based pricing', () => {
   });
 });
 
+describe('selection pricing', () => {
+  /** Price grows with the cube of the height, as for Lab prints. */
+  const print: ConfigurableProduct = {
+    basePrice: 0,
+    productionDaysMin: 2,
+    productionDaysMax: 3,
+    optionGroups: [
+      {
+        id: 'scale',
+        name: 'Розмір',
+        kind: 'scale',
+        isRequired: true,
+        values: [
+          { ...value('60', 0, { isDefault: true }), heightMm: 60 },
+          { ...value('30'), heightMm: 30 },
+          { ...value('15', 0, { isAvailable: false }), heightMm: 15 },
+        ],
+      },
+      {
+        id: 'base',
+        name: 'Підставка',
+        kind: 'base',
+        isRequired: false,
+        values: [value('base', 500)],
+      },
+    ],
+    selectionPrice: (selected) =>
+      selected.reduce(
+        (price, choice) =>
+          choice.heightMm ? (price * choice.heightMm ** 3) / 1000 : price,
+        100,
+      ) + selected.reduce((sum, choice) => sum + choice.priceDelta, 0),
+  };
+
+  it('prices the whole selection at once', () => {
+    const result = configureProduct(print, ['30', 'base']);
+
+    expect(result.unitPrice).toBe(2_700 + 500);
+    expect(result.breakdown).toEqual({
+      manufacturing: 3_200,
+      metal: 0,
+      stones: 0,
+      options: 0,
+      weightGrams: null,
+    });
+  });
+
+  it('shows the cheapest available combination of required groups', () => {
+    expect(priceFrom(print)).toBe(2_700);
+  });
+});
+
 describe('applySetDiscounts', () => {
   const set = {
     collectionId: 'c1',

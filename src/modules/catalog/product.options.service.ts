@@ -17,9 +17,11 @@ import {
   optionGroups,
   optionValues,
   products,
+  resins,
 } from '../../integrations/database/database.schema';
 import type {
   OptionGroup,
+  OptionGroupKind,
   OptionValue,
   ProductType,
 } from '../../integrations/database/database.schema';
@@ -31,10 +33,12 @@ import type {
   UpdateOptionValueDto,
 } from './dto/product.dto';
 import { defaultGroupName, valueLabel } from './product.labels';
+import { optionKindError } from './product.stores';
+import { printFields } from './product.structure';
 import { ProductPricingService } from '../pricing/product.pricing.service';
 
 const MISSING_REFERENCE =
-  'Referenced metal, gemstone, or operation does not exist';
+  'Referenced metal, gemstone, operation, or resin does not exist';
 
 /**
  * Edits single option groups and values. The admin editor saves the whole
@@ -52,6 +56,7 @@ export class ProductOptionsService {
     dto: CreateOptionGroupDto,
   ): Promise<OptionGroup> {
     const product = await this.findProduct(productId);
+    assertOptionKind(product.type, dto.kind);
     const [group] = await this.db
       .insert(optionGroups)
       .values({
@@ -69,6 +74,11 @@ export class ProductOptionsService {
     dto: UpdateOptionGroupDto,
   ): Promise<OptionGroup> {
     const product = await this.findProduct(productId);
+
+    if (dto.kind) {
+      assertOptionKind(product.type, dto.kind);
+    }
+
     const [group] = await this.db.transaction(async (tx) => {
       const updated = await tx
         .update(optionGroups)
@@ -114,13 +124,14 @@ export class ProductOptionsService {
     dto: CreateOptionValueDto,
   ) {
     const group = await this.findGroup(productId, groupId);
-    const label = await this.label(this.db, group, dto);
+    const print = printFields(group.kind, dto);
+    const label = await this.label(this.db, group, { ...dto, ...print });
 
     return withConflictMapping(
       this.db.transaction(async (tx) => {
         const [value] = await tx
           .insert(optionValues)
-          .values({ ...dto, label, groupId })
+          .values({ ...dto, ...print, label, groupId })
           .returning();
         await this.keepSingleDefault(tx, value);
         await this.productPricing.refreshPrices(tx, eq(products.id, productId));
@@ -154,10 +165,15 @@ export class ProductOptionsService {
           return undefined;
         }
 
-        const label = await this.label(tx, group, { ...current, ...dto });
+        const print = printFields(group.kind, { ...current, ...dto });
+        const label = await this.label(tx, group, {
+          ...current,
+          ...dto,
+          ...print,
+        });
         const [updated] = await tx
           .update(optionValues)
-          .set({ ...dto, label })
+          .set({ ...dto, ...print, label })
           .where(eq(optionValues.id, valueId))
           .returning();
         await this.keepSingleDefault(tx, updated);
@@ -202,7 +218,7 @@ export class ProductOptionsService {
     group: OptionGroup & { productType: ProductType },
     value: Partial<OptionValue> & CreateOptionValueDto,
   ): Promise<string> {
-    const [metal, gemstone, finishing] = await Promise.all([
+    const [metal, gemstone, finishing, resin] = await Promise.all([
       value.metalId
         ? executor
             .select({ name: metals.name })
@@ -224,11 +240,19 @@ export class ProductOptionsService {
             .where(eq(finishingOptions.id, value.finishingId))
             .then((rows) => rows[0])
         : undefined,
+      value.resinId
+        ? executor
+            .select({ name: resins.name })
+            .from(resins)
+            .where(eq(resins.id, value.resinId))
+            .then((rows) => rows[0])
+        : undefined,
     ]);
     const label = valueLabel(group.kind, group.productType, value, {
       metal,
       gemstone,
       finishing,
+      resin,
     });
 
     if (!label) {
@@ -289,5 +313,13 @@ export class ProductOptionsService {
           ne(optionValues.id, value.id),
         ),
       );
+  }
+}
+
+function assertOptionKind(type: ProductType, kind: OptionGroupKind): void {
+  const error = optionKindError(type, kind);
+
+  if (error) {
+    throw new BadRequestException(error);
   }
 }

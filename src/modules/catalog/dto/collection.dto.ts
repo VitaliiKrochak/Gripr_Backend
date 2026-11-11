@@ -1,4 +1,4 @@
-import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { ApiProperty, OmitType, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -19,15 +19,24 @@ import {
 import {
   PRODUCT_TYPES,
   PUBLICATION_STATUSES,
+  STORES,
 } from '../../../integrations/database/database.schema';
 import type {
   ProductType,
   PublicationStatus,
+  Store,
 } from '../../../integrations/database/database.schema';
 import { ImageAssetDto } from '../../../shared/media/image.asset.dto';
+import { StoreQueryDto } from '../../../shared/store/store.query.dto';
 import { SLUG_MESSAGE, SLUG_PATTERN } from './reference.dto';
 
 export class CreateCollectionDto {
+  /** Cannot be changed later; products of the collection share it. */
+  @ApiProperty({ enum: STORES, required: false, default: 'gripr' })
+  @IsOptional()
+  @IsIn(STORES)
+  store?: Store;
+
   @Matches(SLUG_PATTERN, { message: `slug ${SLUG_MESSAGE}` })
   @MaxLength(100)
   slug: string;
@@ -104,9 +113,11 @@ export class CreateCollectionDto {
   productIds?: string[];
 }
 
-export class UpdateCollectionDto extends PartialType(CreateCollectionDto) {}
+export class UpdateCollectionDto extends PartialType(
+  OmitType(CreateCollectionDto, ['store'] as const),
+) {}
 
-export class CollectionListQueryDto {
+export class CollectionListQueryDto extends StoreQueryDto {
   @ApiProperty({ enum: PUBLICATION_STATUSES, required: false })
   @IsOptional()
   @IsIn(PUBLICATION_STATUSES)
@@ -121,6 +132,8 @@ export class ImageDto {
 
 export class CollectionDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   slug: string;
   name: string;
   subtitle: string | null;

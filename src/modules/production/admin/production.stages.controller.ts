@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -20,6 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminGuard } from '../../../shared/guards/admin.guard';
+import { StoreQueryDto } from '../../../shared/store/store.query.dto';
 import {
   CreateProductionStageDto,
   ProductionStageDto,
@@ -35,10 +37,12 @@ export class AdminProductionStagesController {
   constructor(private readonly stages: ProductionStagesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List production stages, including inactive ones' })
+  @ApiOperation({
+    summary: 'List production stages of a store, including inactive ones',
+  })
   @ApiOkResponse({ type: [ProductionStageDto] })
-  list(): Promise<ProductionStageDto[]> {
-    return this.stages.list();
+  list(@Query() query: StoreQueryDto): Promise<ProductionStageDto[]> {
+    return this.stages.list(query.store);
   }
 
   @Post()

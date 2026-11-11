@@ -19,24 +19,119 @@ import {
 import {
   CUSTOM_REQUEST_SOURCES,
   CUSTOM_REQUEST_STATUSES,
+  MODEL_DELIVERABLES,
   PRODUCT_TYPES,
   PROPOSAL_STATUSES,
+  STORES,
 } from '../../integrations/database/database.schema';
 import type {
   CustomRequestSource,
   CustomRequestStatus,
+  ModelDeliverable,
   ProductType,
   ProposalStatus,
+  Store,
 } from '../../integrations/database/database.schema';
-import { PaginationQueryDto } from '../../shared/pagination/pagination.query.dto';
+import { StorePageQueryDto } from '../../shared/store/store.query.dto';
 import { ImageAssetDto } from '../../shared/media/image.asset.dto';
 import { JewelrySpecificationDto } from '../../shared/specification/jewelry.specification.dto';
+import { SpecificationChoiceDto } from '../../shared/specification/jewelry.specification.dto';
 import { ImageDto } from '../catalog/dto/collection.dto';
+import { RevisionTermsDto } from '../orders/dto/order.dto';
+import { PRINT_FINISHES } from '../prints/print.settings';
+import type { PrintFinish } from '../prints/print.settings';
 import { OrderContactDto } from '../orders/dto/checkout.dto';
 import { SelectedOptionDto } from '../storefront/storefront.dto';
 
+/** A Gripr Lab model to design; ids are resolved to name snapshots. */
+export class LabSpecificationInputDto {
+  @ApiProperty({ enum: MODEL_DELIVERABLES })
+  @IsIn(MODEL_DELIVERABLES)
+  deliverable: ModelDeliverable;
+
+  /** Printed height in mm; also the scale the file is modeled for. */
+  @IsOptional()
+  @IsNumber()
+  @Min(5)
+  @Max(1000)
+  heightMm?: number;
+
+  /** Resin to print in; omit to let the workshop recommend one. */
+  @IsOptional()
+  @IsUUID()
+  resinId?: string;
+
+  @IsOptional()
+  @ApiProperty({ enum: PRINT_FINISHES, required: false })
+  @IsIn(PRINT_FINISHES)
+  finish?: PrintFinish;
+
+  @IsOptional()
+  @IsBoolean()
+  painted?: boolean;
+
+  /** A base code from `GET /storefront/print-options`. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  baseCode?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  quantity?: number;
+
+  /** The customer's own model file to start from or fix. */
+  @IsOptional()
+  @IsUUID()
+  sourceFileId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  comments?: string;
+}
+
+export class LabSpecificationBaseDto {
+  code: string;
+  name: string;
+}
+
+export class LabSpecificationFileDto {
+  id: string;
+  name: string;
+}
+
+/** Print fields are empty when only the file is delivered. */
+export class LabSpecificationDto {
+  @ApiProperty({ enum: MODEL_DELIVERABLES })
+  deliverable: ModelDeliverable;
+  heightMm: number | null;
+  @ApiProperty({ type: SpecificationChoiceDto, nullable: true })
+  resin: SpecificationChoiceDto | null;
+  @ApiProperty({ enum: PRINT_FINISHES, nullable: true })
+  finish: PrintFinish | null;
+  painted: boolean;
+  @ApiProperty({ type: LabSpecificationBaseDto, nullable: true })
+  base: LabSpecificationBaseDto | null;
+  quantity: number;
+  @ApiProperty({ type: LabSpecificationFileDto, nullable: true })
+  sourceFile: LabSpecificationFileDto | null;
+  comments: string | null;
+}
+
 export class CreateCustomRequestDto {
-  /** Ignored for customizations, which take the type of the product. */
+  /** Store the request is for; defaults to `gripr`. */
+  @IsOptional()
+  @ApiProperty({ enum: STORES, required: false })
+  @IsIn(STORES)
+  store?: Store;
+
+  /**
+   * A jewelry type for Gripr, a print type for Gripr Lab. Ignored for
+   * customizations, which take the type of the product.
+   */
   @ApiProperty({ enum: PRODUCT_TYPES })
   @IsIn(PRODUCT_TYPES)
   productType: ProductType;
@@ -86,7 +181,13 @@ export class CreateCustomRequestDto {
   @Type(() => JewelrySpecificationDto)
   specification?: JewelrySpecificationDto;
 
-  /** Published catalog product to customize. */
+  /** Required for Gripr Lab; not accepted for Gripr. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LabSpecificationInputDto)
+  labSpecification?: LabSpecificationInputDto;
+
+  /** Published Gripr catalog product to customize. */
   @IsOptional()
   @IsUUID()
   productId?: string;
@@ -117,7 +218,17 @@ export class CustomProposalDto {
   @ApiProperty({ enum: PROPOSAL_STATUSES })
   status: ProposalStatus;
   title: string;
-  specification: JewelrySpecificationDto;
+  /** Gripr proposals. */
+  @ApiProperty({ type: JewelrySpecificationDto, nullable: true })
+  specification: JewelrySpecificationDto | null;
+  /** Gripr Lab proposals. */
+  @ApiProperty({ type: LabSpecificationDto, nullable: true })
+  labSpecification: LabSpecificationDto | null;
+  /** Gripr Lab: modeling hours `modelPrice` was calculated from. */
+  modelingHours: number | null;
+  /** Gripr Lab: revisions included in the price and the price of more. */
+  @ApiProperty({ type: RevisionTermsDto, nullable: true })
+  revisionTerms: RevisionTermsDto | null;
   requiresModel: boolean;
   /** 3D modeling price, paid first. */
   modelPrice: number;
@@ -144,6 +255,8 @@ export class CustomRequestProductDto {
 
 export class CustomRequestDto {
   id: string;
+  @ApiProperty({ enum: STORES })
+  store: Store;
   @ApiProperty({ enum: CUSTOM_REQUEST_STATUSES })
   status: CustomRequestStatus;
   /** `customization` requests modify a catalog product. */
@@ -164,6 +277,9 @@ export class CustomRequestDto {
   /** Original customer request; never changed by the workshop. */
   @ApiProperty({ type: JewelrySpecificationDto, nullable: true })
   specification: JewelrySpecificationDto | null;
+  /** Gripr Lab: the original model request; never changed by the workshop. */
+  @ApiProperty({ type: LabSpecificationDto, nullable: true })
+  labSpecification: LabSpecificationDto | null;
   /** Present once the request is quoted. */
   quote: CustomRequestQuoteDto | null;
   /** Latest proposal, if any. */
@@ -205,7 +321,7 @@ export class AdminCustomRequestPageDto {
   pageSize: number;
 }
 
-export class AdminCustomRequestListQueryDto extends PaginationQueryDto {
+export class AdminCustomRequestListQueryDto extends StorePageQueryDto {
   @IsOptional()
   @ApiProperty({ enum: CUSTOM_REQUEST_STATUSES, required: false })
   @IsIn(CUSTOM_REQUEST_STATUSES)
@@ -237,23 +353,50 @@ export class CreateProposalDto {
   @MaxLength(200)
   title: string;
 
-  /** Final proposed specification. */
+  /** Final proposed specification; required for Gripr. */
+  @IsOptional()
   @ValidateNested()
   @Type(() => JewelrySpecificationDto)
-  specification: JewelrySpecificationDto;
+  specification?: JewelrySpecificationDto;
 
-  /** `false` skips the 3D model stage, e.g. for small customizations. */
+  /** Final proposed model; required for Gripr Lab. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LabSpecificationInputDto)
+  labSpecification?: LabSpecificationInputDto;
+
+  /**
+   * `false` skips the 3D model stage, e.g. for small customizations. Gripr
+   * Lab proposals always include a model.
+   */
   @IsBoolean()
   requiresModel: boolean;
 
-  /** 3D modeling price in kopiykas; ignored without a model. */
+  /**
+   * Estimated modeling hours; `modelPrice` is then calculated from the
+   * hourly rate in the print settings.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.25)
+  @Max(1000)
+  modelingHours?: number;
+
+  /**
+   * 3D modeling price in kopiykas; ignored without a model or with
+   * `modelingHours`, otherwise required with a model.
+   */
+  @IsOptional()
   @IsInt()
   @Min(0)
-  modelPrice: number;
+  modelPrice?: number;
 
-  /** Price of the finished piece in kopiykas. */
+  /**
+   * Price of the finished piece in kopiykas: at least 1, or 0 when a Gripr
+   * Lab model is delivered only as a file.
+   */
   @IsInt()
-  @Min(1)
+  @Min(0)
   productPrice: number;
 
   /** Part of the product price due before manufacturing, in kopiykas. */

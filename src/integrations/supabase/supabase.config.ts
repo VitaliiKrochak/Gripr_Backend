@@ -1,6 +1,8 @@
 export interface SupabaseConfig {
   url: string;
   publishableKey: string;
+  /** Server-only key for Storage; model file uploads are off without it. */
+  secretKey: string | null;
 }
 
 export const SUPABASE_CONFIG = Symbol('SUPABASE_CONFIG');
@@ -15,5 +17,9 @@ export function getSupabaseConfig(): SupabaseConfig {
     );
   }
 
-  return { url, publishableKey };
+  return {
+    url,
+    publishableKey,
+    secretKey: process.env.SUPABASE_SECRET_KEY || null,
+  };
 }
