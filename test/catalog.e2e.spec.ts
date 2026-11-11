@@ -89,6 +89,41 @@ describe('Catalog administration and storefront (e2e)', () => {
         .expect(200);
     });
 
+    it('refuses to publish a product that costs 0', async () => {
+      const refused = await request(server())
+        .post('/api/products')
+        .set('Cookie', admin)
+        .send({
+          slug: 'free-ring',
+          name: 'Безкоштовна каблучка',
+          type: 'ring',
+          basePrice: 0,
+          status: 'published',
+        })
+        .expect(409);
+      expect(refused.body.message).toContain('Set a price before publishing');
+
+      const draft = await request(server())
+        .post('/api/products')
+        .set('Cookie', admin)
+        .send({
+          slug: 'free-ring',
+          name: 'Чернетка',
+          type: 'ring',
+          basePrice: 0,
+        })
+        .expect(201);
+      await request(server())
+        .patch(`/api/products/${draft.body.id}`)
+        .set('Cookie', admin)
+        .send({ status: 'published' })
+        .expect(409);
+      await request(server())
+        .delete(`/api/products/${draft.body.id}`)
+        .set('Cookie', admin)
+        .expect(204);
+    });
+
     it('rejects duplicate slugs and deleting metals in use', async () => {
       await request(server())
         .post('/api/products')

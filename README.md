@@ -138,6 +138,14 @@ detected public IP to the storefront as `ALLOWED_DEV_ORIGINS` so visitors can
 reach the dev server through router port forwarding of TCP 3000. Run it once as
 administrator to add the Windows Firewall rule for port 3000.
 
+Development mode compiles every page on its first visit and serves large
+unminified scripts, so it is slow for real use. `start-gripr-prod.bat` builds
+both apps (`npm run build`) and starts them in production mode
+(`start:prod` and `next start`); run it again after code changes. The site is
+reached over plain HTTP by IP, so it starts the storefront with
+`ACCOUNT_COOKIE_SECURE=false` (browsers drop `Secure` cookies on HTTP); remove
+that once the site is served over HTTPS.
+
 ## Run tests
 
 ```bash

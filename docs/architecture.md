@@ -176,7 +176,13 @@ provide a public endpoint that lets a user promote their own account.
 
 `SupabaseModule` is global and exposes `SupabaseService`. Its publishable-key
 client has one responsibility: verify the access token received from the BFF
-and return the trusted Supabase user to `AuthGuard`. NestJS does not create,
+and return the trusted Supabase user to `AuthGuard`. It uses `getClaims`:
+with the project's asymmetric signing key (ES256) the signature and expiry
+are checked locally against the JWKS, fetched once and cached for 10
+minutes, so an API call does not wait for Supabase Auth (a symmetric key
+falls back to the Auth server). The user is built from the token claims
+(`sub`, `phone`, `app_metadata`); a role change or a sign-out takes effect
+for the API when the access token is refreshed or expires. NestJS does not create,
 refresh, revoke, or store sessions and never receives the refresh token.
 
 `SupabaseStorageService` uses the server-only `SUPABASE_SECRET_KEY` for the

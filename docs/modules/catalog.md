@@ -121,9 +121,12 @@ For `in_stock` products, `stockQuantity` limits how many can be ordered and is
 reserved at checkout. Set their production days to the time needed to prepare
 and ship a ready piece.
 
-Products created from an approved open-license design carry `designCredit`
-(author, source, and license) and cannot be published while `priceFrom` is 0;
-that `PATCH` answers `409`. See [designs](designs.md).
+No product can be published while its `priceFrom` is 0: creating or updating
+a published product answers `409` after repricing. This covers manual prices
+of 0, products created from an approved open-license design (they carry
+`designCredit` with the author, source, and license; see
+[designs](designs.md)), and automatically priced Gripr Lab products the print
+calculator cannot price yet (no printer or no active resin).
 
 ### Images
 

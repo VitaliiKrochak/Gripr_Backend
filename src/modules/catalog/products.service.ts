@@ -144,6 +144,7 @@ export class ProductsService {
           tx,
           eq(products.id, product.id),
         );
+        await assertPricedForPublishing(tx, product.id);
         return product.id;
       }),
       { unique: SLUG_CONFLICT, inUse: MISSING_REFERENCE },
@@ -201,9 +202,7 @@ export class ProductsService {
         });
         await this.productPricing.refreshPrices(tx, eq(products.id, id));
 
-        if (current.designCredit) {
-          await assertPricedForPublishing(tx, id);
-        }
+        await assertPricedForPublishing(tx, id);
       }),
       { unique: SLUG_CONFLICT, inUse: MISSING_REFERENCE },
     );
@@ -307,6 +306,11 @@ function assertProductionDays(min = 0, max = 0): void {
   }
 }
 
+/**
+ * A published product needs a price: a manual price above zero, or an
+ * automatic price the calculator can compute (for Gripr Lab: a printer and
+ * an active resin must exist).
+ */
 async function assertPricedForPublishing(
   executor: DatabaseExecutor,
   productId: string,
@@ -318,7 +322,7 @@ async function assertPricedForPublishing(
 
   if (row?.status === 'published' && row.priceFrom <= 0) {
     throw new ConflictException(
-      'Set a price before publishing a product made from an open design',
+      'Set a price before publishing: the product costs 0 (for Gripr Lab, add a printer and an active resin)',
     );
   }
 }

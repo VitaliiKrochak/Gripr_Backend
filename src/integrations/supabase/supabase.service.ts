@@ -17,13 +17,33 @@ export class SupabaseService {
     });
   }
 
+  /**
+   * Verifies the access token and returns its user. With the project's
+   * asymmetric signing key the signature and expiry are checked locally
+   * against the cached JWKS (refreshed every 10 minutes), so no request
+   * reaches Supabase Auth per API call; a symmetric key falls back to the
+   * Auth server. The user is built from the token claims: `app_metadata`
+   * changes apply once the token is refreshed (at most its lifetime).
+   */
   async getUser(accessToken: string): Promise<User> {
-    const { data, error } = await this.client.auth.getUser(accessToken);
+    const { data, error } = await this.client.auth.getClaims(accessToken);
 
-    if (error || !data.user) {
-      throw error ?? new Error('Supabase did not return a user');
+    if (error || !data?.claims.sub) {
+      throw error ?? new Error('Supabase did not verify the access token');
     }
 
-    return data.user;
+    const { claims } = data;
+
+    return {
+      id: claims.sub,
+      aud: typeof claims.aud === 'string' ? claims.aud : 'authenticated',
+      role: claims.role,
+      email: claims.email || undefined,
+      phone: claims.phone || undefined,
+      app_metadata: claims.app_metadata ?? {},
+      user_metadata: claims.user_metadata ?? {},
+      is_anonymous: claims.is_anonymous,
+      created_at: '',
+    };
   }
 }
